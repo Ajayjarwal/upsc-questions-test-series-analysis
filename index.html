@@ -322,6 +322,19 @@ details.nbq .clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:v
 details.nbq[open] .clamp{display:block;-webkit-line-clamp:unset}
 .nbbody{padding:0 20px 20px;display:flex;flex-direction:column;gap:14px}
 @media (max-width:640px){.nbhead h1{font-size:28px}.logo{font-size:16px}}
+
+.figs{display:flex;flex-wrap:wrap;gap:12px}
+.figs figure{margin:0;display:flex;flex-direction:column;gap:6px;max-width:100%}
+.figs img{max-width:100%;max-height:420px;object-fit:contain;border-radius:12px;border:1px solid var(--rule);background:#fff;cursor:zoom-in}
+.figs figcaption{font-size:13px;color:var(--muted)}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;place-items:center;z-index:50;cursor:zoom-out;padding:16px}
+#lb.on{display:grid}
+#lb img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
+
+body{padding-inline:clamp(16px,8.3vw,260px)}
+details.nbq .dots{margin-top:-10px;color:var(--muted,#9aa0aa)}
+details.nbq[open] .dots{display:none}
+@media (max-width:640px){body{padding-inline:16px}}
 </style>
 </head>
 <body>
@@ -336,12 +349,12 @@ const TEMPLATE = JSON.stringify({
   schema:"recall-desk/1",
   paper:{id:"geo-pyq-2023",title:"Geography PYQ 2023",year:2023},
   subject:"Geography",
-  questions:[{no:1,topic:"Soils",question:"Which soil is also called regur soil?",options:{A:"Alluvial",B:"Black",C:"Red",D:"Laterite"},answer:"B",explanation:"Full solution text. **Bold** and lines starting with '- ' are supported.",summary:"One-line note-ready takeaway.",sources:["https://ncert.nic.in/..."]}]
+  questions:[{no:1,topic:"Soils",question:"Which soil is also called regur soil?",options:{A:"Alluvial",B:"Black",C:"Red",D:"Laterite"},answer:"B",explanation:"Full solution text. **Bold** and lines starting with '- ' are supported.",summary:"One-line note-ready takeaway.",sources:["https://ncert.nic.in/..."],images:[{src:"images/q1-solution.png",caption:"Soil profile"}],question_images:["images/q1-map.png"]}]
 },null,2);
 const BUCKETS=[["b0","Not attempted"],["b1","Under 40%"],["b2","40-59%"],["b3","60-79%"],["b4","80% and above"]];
 const MAXSUBJ=3;
 /* Hosting config. Fill these in when you deploy (see README). Leave empty to run without a login (Claude account or this browser). */
-const CONFIG={supabaseUrl:"https://etdfbbtnthwjsroydxsa.supabase.co",supabaseKey:"sb_publishable_N0g-0D1Gd1hXJOmmrgEKfQ_-LBllhv3",googleLogin:false,requireLogin:true};
+const CONFIG={supabaseUrl:"",supabaseKey:"",googleLogin:false,requireLogin:true};
 const IC={
   quiz:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>',
   smart:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -358,7 +371,7 @@ const S={
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
   nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic",
-  quiz:null, imp:{parsed:null,errors:[],text:"",dups:[]}, confirmDel:null, mdText:""
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[]}, confirmDel:null, mdText:""
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -428,7 +441,7 @@ function enqueue(fn){chain=chain.then(fn).catch(e=>{toast("Could not save: "+((e
 function rebuild(){
   S.qs=[];S.byUid=new Map();
   for(const p of S.packs)for(const q of p.questions){
-    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",src:q.src||[],year:q.year||""};
+    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||""};
     S.qs.push(x);S.byUid.set(x.uid,x);
   }
 }
@@ -467,6 +480,17 @@ const openMistakes=()=>S.qs.filter(q=>S.prog[q.uid]&&S.prog[q.uid].m);
 const bookmarks=()=>S.qs.filter(q=>S.prog[q.uid]&&S.prog[q.uid].b);
 const mono=s=>{const w=String(s).trim().split(/\s+/)[0]||"?";return w.slice(0,2).toUpperCase();};
 
+/* ---------- images ---------- */
+function imgSafe(s){s=String(s||"").trim();return /^https:\/\/\S+$/i.test(s)||/^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,[A-Za-z0-9+\/=]+$/i.test(s)||/^(?!\/\/)[\w\-./ %]+\.(png|jpe?g|webp|gif|svg)$/i.test(s);}
+function normImgs(v){
+  if(!v)return [];if(!Array.isArray(v))v=[v];
+  return v.map(x=>typeof x==="string"?{src:x,cap:""}:{src:String((x&&(x.src||x.url))||""),cap:String((x&&(x.caption||x.cap||x.alt))||"")}).map(x=>({src:x.src.trim(),cap:x.cap.trim()})).filter(x=>imgSafe(x.src));
+}
+function figs(list){
+  list=list||[];if(!list.length)return "";
+  return `<div class="figs">${list.map(f=>`<figure><img src="${esc(f.src)}" alt="${esc(f.cap||"Figure")}" loading="lazy" data-act="zoom" data-v="${esc(f.src)}">${f.cap?`<figcaption>${esc(f.cap)}</figcaption>`:""}</figure>`).join("")}</div>`;
+}
+
 /* ---------- import parsing ---------- */
 function parseImport(text){
   let data;
@@ -500,7 +524,7 @@ function parseImport(text){
     used.add(no);
     let src=r.sources||r.source||[];if(!Array.isArray(src))src=String(src).split(/\n+/);
     src=src.map(x=>String(x).trim()).filter(Boolean);
-    out.push({no,subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:String(r.explanation||r.exp||"").trim(),sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||"")});
+    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:String(r.explanation||r.exp||"").trim(),sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||"")});
   });
   out.sort((a,b)=>a.no-b.no);
   return {id,title,questions:out,errors};
@@ -513,15 +537,17 @@ function fmtSol(text){
   let html="",list=[],first=true;
   const flush=()=>{if(list.length){html+="<ul>"+list.map(x=>"<li>"+inline(x)+"</li>").join("")+"</ul>";list=[];}};
   for(const l of lines){
+    const fm=l.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
+    if(fm){flush();if(imgSafe(fm[2]))html+=figs([{src:fm[2],cap:fm[1]}]);continue;}
     if(/^[-•]\s+/.test(l)){list.push(l.replace(/^[-•]\s+/,""));continue;}
     flush();html+=`<p${first?' class="lead"':""}>${inline(l)}</p>`;first=false;
   }
   flush();return html;
 }
 function solution(q){
-  if(!q.exp&&!q.sum)return "";
+  if(!q.exp&&!q.sum&&!(q.simg||[]).length)return "";
   const links=q.src.map(u=>/^https?:\/\/\S+/.test(u)?`<a href="${esc(u.split(/\s+/)[0])}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`:`<span class="muted">${esc(u)}</span>`).join("");
-  return `<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}</div>`;
+  return `<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}${figs(q.simg)}${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}</div>`;
 }
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
@@ -658,7 +684,7 @@ function viewReview(){
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p><div class="opts">${opts}</div>${verdict}${solution(q)}
+  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
 
@@ -681,7 +707,7 @@ function viewQuiz(){
   else nav+=`<button class="btn" data-act="skip">${last?"Skip and finish":"Skip"}</button>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="exit">Exit</button><div class="bar" aria-hidden="true"><b style="width:${Math.round(answeredCount(Q)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.i+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>
+  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${verdict}${locked?solution(q):""}
@@ -718,12 +744,13 @@ function mdFor(list){
 function qCard(q,extra,pickArg,status){
   const p=S.prog[q.uid]||{},pick=pickArg!==undefined&&pickArg!==null?pickArg:(p.x||"");
   const chip=status==="ok"?`<span class="chip2 ok">Correct</span>`:status==="bad"?`<span class="chip2 bad">Incorrect</span>`:status==="skip"?`<span class="chip2 skip">Skipped</span>`:"";
-  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body"><div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct)":L===pick?" (you chose)":""}</span></div>`).join("")}</div>${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
+  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct)":L===pick?" (you chose)":""}</span></div>`).join("")}</div>${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
 }
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
-  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext clamp">${esc(q.text)}</p></summary>
-  <div class="nbbody"><div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
+  const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
   ${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x</span></div></details>`;
 }
 function viewNotebook(){
@@ -827,7 +854,8 @@ function viewImport(){
   <section class="card"><h2>Your question sets</h2>
   ${S.packs.length?`<div>${S.packs.map(p=>{const subs=[...new Set(p.questions.map(q=>q.subject))].join(", ");return `<div class="pack"><div><strong>${esc(p.title)}</strong>${p.sample?` <span class="tag plain">sample</span>`:""}<div class="muted" style="font-size:14px">${p.questions.length} questions · ${esc(subs)}</div></div><button class="btn sm danger" data-act="del" data-v="${esc(p.id)}">${S.confirmDel===p.id?"Tap again to delete":"Delete"}</button></div>`;}).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
-  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
+  ${backupCard()}
+  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
 }
 
 /* ---------- render ---------- */
@@ -856,6 +884,8 @@ function render(){
 }
 function bindImport(){
   const ta=document.getElementById("imptext"),f=document.getElementById("impfile");
+  const bf=document.getElementById("bkfile");
+  if(bf)bf.addEventListener("change",()=>{const file=bf.files&&bf.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{const r=parseBackup(String(rd.result||""));S.bk=r.error?{parsed:null,error:r.error}:{parsed:r,error:""};render();};rd.readAsText(file);});
   if(ta)ta.addEventListener("input",()=>{S.imp.text=ta.value;runParse();});
   if(f)f.addEventListener("change",()=>{const file=f.files&&f.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{S.imp.text=String(rd.result||"");const t=document.getElementById("imptext");if(t)t.value=S.imp.text;runParse();};rd.readAsText(file);});
 }
@@ -899,6 +929,53 @@ async function authMagic(){
   S.authMsg=r.error?{text:r.error.message,bad:1}:{text:"Login link sent. Open it on this device."};render();
 }
 function resetData(){S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();}
+
+/* ---------- backup ---------- */
+function buildBackup(){
+  const progress={};for(const p of S.packs)progress[p.id]=itemsFor(p.id);
+  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions})),progress});
+}
+function saveFile(name,text){
+  try{const b=new Blob([text],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return true;}catch(e){return false;}
+}
+function parseBackup(text){
+  let d;try{d=JSON.parse(text);}catch(e){return {error:"This is not valid JSON."};}
+  if(!d||d.schema!=="recall-desk-backup/1"||!Array.isArray(d.packs))return {error:"This is not a Recall Desk backup file."};
+  const packs=[];
+  for(const p of d.packs){
+    if(!p||!p.id||!Array.isArray(p.questions))continue;
+    const qs=p.questions.filter(q=>q&&Number.isInteger(q.no)&&q.text&&q.options&&q.answer&&q.options[q.answer]);
+    if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs});
+  }
+  if(!packs.length)return {error:"No question sets were found in this backup."};
+  return {packs,progress:d.progress&&typeof d.progress==="object"?d.progress:{},exported:d.exported||""};
+}
+async function restoreBackup(){
+  const b=S.bk.parsed;if(!b)return;
+  for(const p of b.packs){
+    const old=S.packs.find(x=>x.id===p.id),oldChunks=old?old.chunks:0;
+    const pack={...p,chunks:oldChunks};
+    S.packs=S.packs.filter(x=>x.id!==p.id).concat(pack);
+    rebuild();
+    await enqueue(()=>S.store.savePack(pack,oldChunks));
+    const items=b.progress[p.id]||{};
+    for(const no in items)S.prog[p.id+":"+no]=items[no];
+    queueSave(p.id);
+  }
+  flush();
+  const n=b.packs.reduce((a,p)=>a+p.questions.length,0);
+  S.bk={parsed:null,error:""};toast("Restored "+b.packs.length+" set"+(b.packs.length===1?"":"s")+", "+n+" questions");render();
+}
+function backupCard(){
+  const b=S.bk.parsed,n=b?b.packs.reduce((a,p)=>a+p.questions.length,0):0,pn=b?Object.values(b.progress).reduce((a,o)=>a+Object.keys(o||{}).length,0):0;
+  return `<section class="card"><h2>Backup and restore</h2>
+  <p class="muted">Save all your question sets and your progress (mistakes, bookmarks, attempts) to one file, and load it back any time, even in a new account.</p>
+  <div class="row">${CONFIG.requireLogin?`<button class="btn pri" data-act="bkdl" ${S.packs.length?"":"disabled"}>Download backup</button>`:""}<button class="btn${CONFIG.requireLogin?"":" pri"}" data-act="bkcopy" ${S.packs.length?"":"disabled"}>Copy backup</button></div>
+  <p class="hint">${CONFIG.requireLogin?"If your browser blocks the download, use Copy backup and paste it into a text file.":"Copy the backup and paste it into a text file. Restore reads that file back."}</p>
+  <div class="field"><label class="label" for="bkfile">Restore from a backup file</label><input type="file" id="bkfile" accept=".json,application/json,.txt"></div>
+  ${S.bk.error?`<p class="note bad">${esc(S.bk.error)}</p>`:""}
+  ${b?`<div class="field"><p>${b.packs.length} set${b.packs.length===1?"":"s"} \u00b7 ${n} questions \u00b7 progress on ${pn} questions${b.exported?` \u00b7 saved ${esc(String(b.exported).slice(0,10))}`:""}</p><p class="hint">Sets with the same id are replaced along with their progress. Your other sets stay as they are.</p><div class="row"><button class="btn pri" data-act="bkrestore">Restore</button></div></div>`:""}</section>`;
+}
 
 /* ---------- actions ---------- */
 function recordAnswer(uid,pick){
@@ -1022,6 +1099,10 @@ document.addEventListener("click",async e=>{
     case "rprev":if(S.quiz.rv>0){S.quiz.rv--;render();window.scrollTo(0,0);}break;
     case "rnext":if(S.quiz.rv<S.quiz.uids.length-1){S.quiz.rv++;render();window.scrollTo(0,0);}break;
     case "rback":S.quiz.rv=null;render();window.scrollTo(0,0);break;
+    case "zoom":{let lb=document.getElementById("lb");if(!lb){lb=document.createElement("div");lb.id="lb";lb.addEventListener("click",()=>lb.classList.remove("on"));document.body.appendChild(lb);}lb.innerHTML=`<img src="${esc(v)}" alt="">`;lb.classList.add("on");break;}
+    case "bkdl":{const ok=saveFile("recall-desk-backup-"+new Date().toISOString().slice(0,10)+".json",buildBackup());toast(ok?"Backup downloaded":"Download blocked here. Use Copy backup.");break;}
+    case "bkcopy":try{await navigator.clipboard.writeText(buildBackup());toast("Backup copied. Paste it into a text file.");}catch(err){toast("Could not copy. Try Download backup.");}break;
+    case "bkrestore":await restoreBackup();break;
     case "authmode":authVals();S.authMode=v;S.authMsg=null;render();break;
     case "authgo":await authGo();break;
     case "magic":await authMagic();break;
@@ -1079,7 +1160,8 @@ render();
   if(CONFIG.supabaseUrl&&CONFIG.supabaseKey){
     try{
       await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js");
-      S.sb=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      const base=(()=>{try{return new URL(CONFIG.supabaseUrl.trim()).origin;}catch(e){return CONFIG.supabaseUrl.trim();}})();
+      S.sb=window.supabase.createClient(base,CONFIG.supabaseKey.trim(),{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
       S.sb.auth.onAuthStateChange((ev,session)=>{
         if(ev==="SIGNED_OUT"){resetData();S.user=null;S.auth="login";S.ready=true;render();}
         else if(session&&session.user&&(!S.user||S.user.id!==session.user.id))setTimeout(()=>startCloud(session.user),0);
