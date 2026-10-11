@@ -335,6 +335,11 @@ body{padding-inline:clamp(16px,8.3vw,260px)}
 details.nbq .dots{margin-top:-10px;color:var(--muted,#9aa0aa)}
 details.nbq[open] .dots{display:none}
 @media (max-width:640px){body{padding-inline:16px}}
+
+.delbox{flex-basis:100%;border:1px solid #6b2f2f;background:#1d1214;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.delbox p{margin:0}
+.delin{background:var(--bg,#0e1014);color:inherit;border:1px solid var(--rule);border-radius:10px;padding:8px 12px;font:inherit;min-width:140px}
+.delbox .btn[disabled]{opacity:.4;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -845,14 +850,21 @@ function importPreview(){
   }
   return bits.join("");
 }
+function fmtWhen(ts){if(!ts)return "Added earlier";try{return "Added "+new Date(ts).toLocaleString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit"});}catch(e){return "Added earlier";}}
+function logRow(p){
+  const subs=[...new Set(p.questions.map(q=>q.subject))].join(", ");
+  const open=S.confirmDel===p.id;
+  return `<div class="pack logrow"><div><strong>${esc(p.title)}</strong>${p.sample?` <span class="tag plain">sample</span>`:""}<div class="muted" style="font-size:14px">${esc(subs)} · ${p.questions.length} questions</div><div class="muted" style="font-size:13px">${esc(fmtWhen(p.ts))}</div></div>${open?"":`<button class="btn sm danger" data-act="del" data-v="${esc(p.id)}">Delete</button>`}
+  ${open?`<div class="delbox"><p><strong>Delete "${esc(p.title)}"?</strong> All ${p.questions.length} questions and your progress on them will be removed. This cannot be undone.</p><label class="label" for="delin">Type DELETE to confirm</label><div class="row"><input id="delin" class="delin" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE"><button class="btn sm danger" id="delgo" data-act="delgo" data-v="${esc(p.id)}" disabled>Delete test</button><button class="btn sm" data-act="delno">Cancel</button></div></div>`:""}</div>`;
+}
 function viewImport(){
   return `<div class="field" style="gap:6px"><h1>Import</h1><p class="muted">Add question sets. Subjects and sub-topics are created from the file.</p></div>
   <section class="card"><h2>Import questions</h2>
   <div class="field"><label class="label" for="impfile">File</label><input type="file" id="impfile" accept=".json,application/json,.txt"></div>
   <div class="field"><label class="label" for="imptext">Or paste JSON</label><textarea id="imptext" spellcheck="false" placeholder='{"subject":"Geography","questions":[...]}'>${esc(S.imp.text)}</textarea></div>
   <div id="imp-out" class="field">${importPreview()}</div></section>
-  <section class="card"><h2>Your question sets</h2>
-  ${S.packs.length?`<div>${S.packs.map(p=>{const subs=[...new Set(p.questions.map(q=>q.subject))].join(", ");return `<div class="pack"><div><strong>${esc(p.title)}</strong>${p.sample?` <span class="tag plain">sample</span>`:""}<div class="muted" style="font-size:14px">${p.questions.length} questions · ${esc(subs)}</div></div><button class="btn sm danger" data-act="del" data-v="${esc(p.id)}">${S.confirmDel===p.id?"Tap again to delete":"Delete"}</button></div>`;}).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
+  <section class="card"><h2>Import log</h2><p class="muted">Every test you added, newest first. Deleting a test removes all its questions and your progress on them.</p>
+  ${S.packs.length?`<div>${S.packs.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
   ${backupCard()}
   <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
@@ -886,6 +898,8 @@ function bindImport(){
   const ta=document.getElementById("imptext"),f=document.getElementById("impfile");
   const bf=document.getElementById("bkfile");
   if(bf)bf.addEventListener("change",()=>{const file=bf.files&&bf.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{const r=parseBackup(String(rd.result||""));S.bk=r.error?{parsed:null,error:r.error}:{parsed:r,error:""};render();};rd.readAsText(file);});
+  const di=document.getElementById("delin"),dg=document.getElementById("delgo");
+  if(di&&dg){di.addEventListener("input",()=>{dg.disabled=di.value.trim().toLowerCase()!=="delete";});di.addEventListener("keydown",e=>{if(e.key==="Enter"&&!dg.disabled)dg.click();});}
   if(ta)ta.addEventListener("input",()=>{S.imp.text=ta.value;runParse();});
   if(f)f.addEventListener("change",()=>{const file=f.files&&f.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{S.imp.text=String(rd.result||"");const t=document.getElementById("imptext");if(t)t.value=S.imp.text;runParse();};rd.readAsText(file);});
 }
@@ -1108,11 +1122,13 @@ document.addEventListener("click",async e=>{
     case "magic":await authMagic();break;
     case "google":{const r=await S.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:authBack()}});if(r.error){S.authMsg={text:r.error.message,bad:1};render();}break;}
     case "signout":flush();await chain;await S.sb.auth.signOut();break;
-    case "del":{
-      if(S.confirmDel!==v){S.confirmDel=v;render();setTimeout(()=>{if(S.confirmDel===v){S.confirmDel=null;if(S.tab==="import")render();}},4000);break;}
-      const p=S.packs.find(x=>x.id===v);S.confirmDel=null;if(!p)break;
-      S.packs=S.packs.filter(x=>x.id!==v);for(const k of Object.keys(S.prog))if(k.startsWith(v+":"))delete S.prog[k];
-      rebuild();render();await enqueue(()=>S.store.deletePack(p));toast("Set deleted");break;}
+    case "del":S.confirmDel=v;render();{const x=document.getElementById("delin");if(x)x.focus();}break;
+    case "delno":S.confirmDel=null;render();break;
+    case "delgo":{
+      const x=document.getElementById("delin");if(!x||x.value.trim().toLowerCase()!=="delete")break;
+      const p=S.packs.find(z=>z.id===v);S.confirmDel=null;if(!p)break;
+      S.packs=S.packs.filter(z=>z.id!==v);for(const k of Object.keys(S.prog))if(k.startsWith(v+":"))delete S.prog[k];
+      rebuild();render();await enqueue(()=>S.store.deletePack(p));toast("\""+p.title+"\" deleted");break;}
   }
 });
 document.addEventListener("change",e=>{
