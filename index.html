@@ -384,7 +384,7 @@ const S={
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
   nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic",
-  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[]}, confirmDel:null, newMode:"practice", mdText:""
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:""}, confirmDel:null, newMode:"practice", mdText:""
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -862,8 +862,9 @@ function importPreview(){
     bits.push(`<div class="pv scroll"><table><thead><tr><th>Subject</th><th>Sub-topic</th><th>Questions</th></tr></thead><tbody>${[...g].map(([s,tm])=>[...tm].map(([t,qs])=>`<tr><td>${esc(s)}</td><td>${esc(t)}</td><td>${qs.length}</td></tr>`).join("")).join("")}</tbody></table></div>
     <p class="hint">${withSol} of ${r.questions.length} have a solution.</p>
     ${dups.length?`<div class="field"><h3>Similar questions found (${dups.length})</h3><p class="muted">Review each pair. If they are different questions, keep both.</p>${dups.map(dupCard).join("")}</div>`:""}
+    <div class="field"><label class="label" for="impname">Test name (shown in the import log)</label><input id="impname" class="delin" style="width:100%" type="text" maxlength="120" value="${esc(S.imp.name||"")}" placeholder="${esc(r.title)}"></div>
     ${modeSeg()}
-    <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} "${esc(r.title)}" (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
+    <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} test (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
     ${exists?`<p class="hint">Same set id exists: its questions are replaced, your progress on matching numbers is kept.</p>`:""}`);
   }
   return bits.join("");
@@ -1087,8 +1088,8 @@ async function applyImport(attempt){
   const qs=r.questions.filter(q=>!drop.has(q.no));
   if(!qs.length){toast("Nothing left to add");return;}
   for(const uid of del)await removeQuestion(uid);
-  const pack=await addPack({id:r.id,title:r.title,questions:qs},false);
-  S.imp={parsed:null,errors:[],text:"",dups:[]};
+  const pack=await addPack({id:r.id,title:(S.imp.name||"").trim()||r.title,questions:qs},false);
+  S.imp={parsed:null,errors:[],text:"",dups:[],name:""};
   const uids=pack.questions.map(q=>pack.id+":"+q.no);
   if(attempt){toast(qs.length+" questions added");startQuiz(uids,{mode:S.newMode,kind:"New import",label:pack.title});}
   else{toast(qs.length+" questions added"+(del.size?", "+del.size+" older replaced":""));S.tab="practice";S.view="home";render();}
@@ -1158,6 +1159,7 @@ document.addEventListener("click",async e=>{
       rebuild();render();await enqueue(()=>S.store.deletePack(p));toast("\""+p.title+"\" deleted");break;}
   }
 });
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="impname")S.imp.name=e.target.value;});
 document.addEventListener("change",e=>{
   const d=e.target&&e.target.dataset&&e.target.dataset.change;
   if(d==="pack"){S.sel.pack=e.target.value;render();}
