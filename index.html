@@ -348,6 +348,28 @@ details.nbq[open] .dots{display:none}
 .qbar .btn[disabled]{opacity:.45;cursor:not-allowed}
 #toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 @media (max-width:640px){.qbar{padding-inline:16px}}
+
+.spaces{display:flex;gap:8px}
+.spc{border:1px solid var(--rule);background:transparent;color:var(--muted);padding:7px 16px;border-radius:999px;font-weight:600;font-size:13px;cursor:pointer}
+.spc[aria-selected=true]{background:var(--gold-soft);border-color:var(--gold);color:var(--gold)}
+
+:root[data-space="ca"]{--bg:#000;--card:#0a1543;--card2:#070f33;--rule:#1c2c75;--muted:#9fabdb;--gold:#8aa4ff;--gold-ink:#000a2e;--gold-soft:#101f66;--gold-line:#2c40a0;--pill:#fff;--pill-ink:#0a1543}
+.camode{font-size:11px;font-weight:700;letter-spacing:.28em;color:#8aa4ff;border:1px solid #1c2c75;background:#0a1543;border-radius:8px;padding:5px 12px;align-self:flex-start;width:max-content}
+:root[data-space="ca"] .logo{text-shadow:0 0 6px #6f8cff,0 0 18px #3a55e0}
+:root[data-space="ca"] .qbar{background:#02061c;border-top-color:#1c2c75}
+
+.hgroups{display:flex;flex-direction:column;gap:16px}
+.hsub{border:1px solid var(--rule);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.hshead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hshead strong{font-size:20px;font-weight:600}
+.hsbar{width:8px;height:30px;border-radius:4px;background:var(--rule);display:inline-block}
+.hsbar.strong{background:var(--good)}.hsbar.avg{background:var(--gold)}.hsbar.weak{background:#d36a6a}
+.hspct{font-weight:700;font-size:20px}.hspct.strong{color:var(--good)}.hspct.avg{color:var(--gold)}.hspct.weak{color:#ff9a9a}.hspct.none{color:var(--muted)}
+.vsep{width:1px;background:var(--rule);margin:4px 2px}
+.cell.low{background:repeating-linear-gradient(135deg,var(--card2) 0 9px,var(--card) 9px 18px)}
+.cell.low .p{color:var(--muted)}
+.cell.none{border-color:var(--rule)}.cell.none .p{font-size:14px;font-weight:600}
+.cell.weak.low{background:repeating-linear-gradient(135deg,var(--card2) 0 9px,var(--card) 9px 18px)}
 </style>
 </head>
 <body>
@@ -383,8 +405,8 @@ const S={
   tab:"practice", view:"home", step:1, ready:false, storage:"browser", store:null, auth:(CONFIG.supabaseUrl||CONFIG.requireLogin)?"checking":"none", authErr:"", authMode:"in", authMsg:null, authEmail:"", user:null, sb:null,
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
-  nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic",
-  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:""}, confirmDel:null, newMode:"practice", mdText:""
+  nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:""
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -451,12 +473,16 @@ let chain=Promise.resolve();
 function enqueue(fn){chain=chain.then(fn).catch(e=>{toast("Could not save: "+((e&&e.message)||"unknown error"));});return chain;}
 
 /* ---------- data model ---------- */
+const CAP="ca::";
+function inSpace(id){return S.space==="ca"?String(id).startsWith(CAP):!String(id).startsWith(CAP);}
+function spacePacks(){return S.packs.filter(p=>inSpace(p.id));}
+function spaceName(){return S.space==="ca"?"Current Affairs":"Static";}
 function rebuild(){
   S.qs=[];S.byUid=new Map();
-  for(const p of S.packs)for(const q of p.questions){
+  for(const p of S.packs){if(!inSpace(p.id))continue;for(const q of p.questions){
     const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||""};
     S.qs.push(x);S.byUid.set(x.uid,x);
-  }
+  }}
 }
 function applyProg(progByPack){
   S.prog={};
@@ -570,6 +596,8 @@ function header(){
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
   return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><span class="status">${S.ready?where:"Opening your bank..."}</span></div>
+  ${S.space==="ca"?`<div class="camode">CURRENT AFFAIRS MODE</div>`:""}
+  <div class="spaces" role="tablist" aria-label="Question space">${[["static","Static"],["ca","Current Affairs"]].map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
   <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
 }
 function emptyBank(){
@@ -581,7 +609,7 @@ function emptyBank(){
 /* ---------- practice ---------- */
 function rank(q){const p=S.prog[q.uid];return p&&p.m?0:!(p&&p.a)?1:2;}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
-const latestPack=()=>S.packs.filter(p=>p.ts).sort((a,b)=>b.ts-a.ts)[0]||null;
+const latestPack=()=>spacePacks().filter(p=>p.ts).sort((a,b)=>b.ts-a.ts)[0]||null;
 const effCount=o=>o.count==="custom"?Math.max(1,Math.min(200,parseInt(o.custom,10)||1)):o.count;
 const tgt=()=>S.view==="smart"?S.smart:S.sel;
 const priority=q=>{const p=S.prog[q.uid]||{};const w=p.w||0,sk=p.sk||0;return w>=2||w+sk>=3?3:w===1?2:1;};
@@ -654,7 +682,7 @@ function viewWiz(){
     <div class="field"><span class="label">Sub-topics ${sel.topics.size?"":"(all)"}</span><div class="row">${chips.join("")}</div></div>
     <div class="field"><span class="label">Which questions</span><div class="seg">${whichOpts.map(([k,l])=>`<button aria-pressed="${sel.which===k}" data-act="which" data-v="${k}">${l}</button>`).join("")}</div></div>
     ${prefsBlock(sel,matches)}
-    ${S.packs.length>1?`<div class="field"><label class="label" for="packsel">Question set</label><select id="packsel" data-change="pack"><option value="all">All sets</option>${S.packs.map(p=>`<option value="${esc(p.id)}"${sel.pack===p.id?" selected":""}>${esc(p.title)}</option>`).join("")}</select></div>`:""}
+    ${spacePacks().length>1?`<div class="field"><label class="label" for="packsel">Question set</label><select id="packsel" data-change="pack"><option value="all">All sets</option>${spacePacks().map(p=>`<option value="${esc(p.id)}"${sel.pack===p.id?" selected":""}>${esc(p.title)}</option>`).join("")}</select></div>`:""}
   </section>
   <div class="foot"><span class="muted">${n} question${n===1?"":"s"} · ${sel.mode==="exam"?"Exam":"Practice"} mode</span><div class="row"><button class="btn" data-act="back1">Previous</button><button class="btn pri" data-act="start" ${n?"":"disabled"}>Start</button></div></div>`;
 }
@@ -810,22 +838,30 @@ function viewHeat(){
   const head=`<div class="field" style="gap:6px"><h1>Memory Heatmap</h1><p class="muted">Based on your latest answer to every question you've attempted</p></div>`;
   if(!S.qs.length)return head+emptyBank();
   const all=stat(S.qs),g=groupBySubject(S.qs);
-  const topics=[];
-  for(const [sub,tm] of g)for(const [t,qs] of tm){const s=stat(qs);if(s.att)topics.push({name:t,sub,t,s,p:pct(s)});}
+  const topics=[],groups=[],showAll=!!S.heatAll;
+  for(const [sub,tm] of g){
+    const items=[];
+    for(const [t,qs] of tm){const s=stat(qs);if(s.att||showAll)items.push({name:t,sub,t,s,p:s.att?pct(s):null,n:qs.length});if(s.att)topics.push({name:t,sub,t,s,p:pct(s)});}
+    const ss=stat([...tm.values()].flat());
+    if(items.length)groups.push({sub,s:ss,p:ss.att?pct(ss):null,items:items.sort((a,b)=>b.s.att-a.s.att||(a.p===null)-(b.p===null)||(a.p||0)-(b.p||0))});
+  }
+  groups.sort((a,b)=>b.s.att-a.s.att);
   const subs=[];
-  for(const [sub,tm] of g){const s=stat([...tm.values()].flat());if(s.att)subs.push({name:sub,sub:"",t:"",s,p:pct(s),subKey:sub});}
-  const cls=x=>x.p>=70?"strong":x.p>=50?"avg":"weak";
+  for(const [sub,tm] of g){const s=stat([...tm.values()].flat());if(s.att||showAll)subs.push({name:sub,sub:"",t:"",s,p:s.att?pct(s):null,subKey:sub});}
+  const cls=x=>x.p===null?"none":x.p>=70?"strong":x.p>=50?"avg":"weak";
   const conf=topics.filter(x=>x.s.att>=3);
   const nStrong=conf.filter(x=>cls(x)==="strong").length,nAvg=conf.filter(x=>cls(x)==="avg").length,nWeak=conf.filter(x=>cls(x)==="weak").length;
   const focus=conf.filter(x=>x.p<70).sort((a,b)=>a.p-b.p||b.s.att-a.s.att).slice(0,5);
-  const by=S.heatBy,cells=(by==="topic"?topics:subs).slice().sort((a,b)=>b.s.att-a.s.att||a.p-b.p);
+  const by=S.heatBy,cells=subs.slice().sort((a,b)=>b.s.att-a.s.att||(a.p||0)-(b.p||0));
+  const cellHtml=x=>`<button class="cell ${cls(x)}${x.s.att>=3?" conf":" low"}" style="--g:${Math.max(1,x.s.att)}" data-act="heat" data-s="${esc(x.sub||x.subKey)}" data-t="${esc(x.t)}"><span><span class="n">${esc(x.name)}</span>${x.sub&&by!=="topic"?`<span class="s" style="display:block">${esc(x.sub)}</span>`:by==="topic"?"":`<span class="s" style="display:block">${x.s.ok}/${x.s.att} right</span>`}</span><span class="p">${x.p===null?"Not attempted":x.p+"%"}</span></button>`;
+  const nShown=by==="topic"?groups.reduce((a,b)=>a+b.items.length,0):cells.length;
   const accP=pct(all);
   return head+`<section class="card"><div class="hm"><div class="field" style="gap:12px"><span class="label">Overall accuracy</span><span class="acc">${accP===null?"-":accP+"%"}</span><span class="muted">${all.ok} of ${all.att} questions correct</span>
     <div class="field" style="gap:8px;margin-top:6px"><div class="dotrow"><span><i class="dot2" style="background:var(--good)"></i>Strong topics</span><strong>${nStrong}</strong></div><div class="dotrow"><span><i class="dot2" style="background:var(--gold)"></i>Average topics</span><strong>${nAvg}</strong></div><div class="dotrow"><span><i class="dot2" style="background:#e06a6a"></i>Weak topics</span><strong>${nWeak}</strong></div></div></div>
     <div class="field"><strong class="row" style="gap:10px"><span class="gold">${ic("quiz")}</span>Focus next</strong>${focus.length?focus.map(x=>`<div class="focus"><i></i><div><strong>${esc(x.name)}</strong><div class="muted" style="font-size:14px">${esc(x.sub)} · ${x.p}% (${x.s.ok}/${x.s.att})</div></div></div>`).join(""):`<p class="muted">${all.att?"No weak or average topics with 3+ attempts yet. Keep going.":"Take a quiz and your weak topics appear here."}</p>`}</div></div></section>
-  <section class="card"><div class="row sp"><div><h2>${by==="topic"?"Topics":"Subjects"} you've attempted</h2><p class="muted">${cells.length} ${by==="topic"?"topic":"subject"}${cells.length===1?"":"s"} · bigger cell = more questions attempted</p></div>
-    <div class="viewtog"><button aria-pressed="${by==="topic"}" data-act="heatby" data-v="topic">By topic</button><button aria-pressed="${by==="subject"}" data-act="heatby" data-v="subject">By subject</button></div></div>
-    ${cells.length?`<div class="cells">${cells.map(x=>`<button class="cell ${cls(x)}${x.s.att>=3?" conf":" low"}" style="--g:${Math.max(1,x.s.att)}" data-act="heat" data-s="${esc(x.sub||x.subKey)}" data-t="${esc(x.t)}"><span><span class="n">${esc(x.name)}</span>${x.sub?`<span class="s" style="display:block">${esc(x.sub)}</span>`:`<span class="s" style="display:block">${x.s.ok}/${x.s.att} right</span>`}</span><span class="p">${x.p}%</span></button>`).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`}
+  <section class="card"><div class="row sp"><div><h2>${by==="topic"?"Topics":"Subjects"} ${showAll?"overview":"you've attempted"}</h2><p class="muted">${by==="topic"?`${nShown} topic${nShown===1?"":"s"} across ${groups.length} subject${groups.length===1?"":"s"}`:`${nShown} subject${nShown===1?"":"s"}`} · bigger cell = more questions attempted</p></div>
+    <div class="viewtog"><button aria-pressed="${by==="topic"}" data-act="heatby" data-v="topic">By topic</button><button aria-pressed="${by==="subject"}" data-act="heatby" data-v="subject">By subject</button><span class="vsep"></span><button aria-pressed="${showAll}" data-act="heatall">Show unattempted</button></div></div>
+    ${by==="topic"?(groups.length?`<div class="hgroups">${groups.map(gr=>`<div class="hsub"><div class="hshead"><i class="hsbar ${cls(gr)}"></i><strong>${esc(gr.sub)}</strong><span class="hspct ${cls(gr)}">${gr.p===null?"\u2014":gr.p+"%"}</span><span class="muted">${gr.s.att?`${gr.s.ok} of ${gr.s.att} correct \u00b7 `:"Not attempted \u00b7 "}${gr.items.length} topic${gr.items.length===1?"":"s"}</span></div><div class="cells">${gr.items.map(cellHtml).join("")}</div></div>`).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`):(cells.length?`<div class="cells">${cells.map(cellHtml).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`)}
     <div class="lg2"><span><i style="border-color:var(--good);background:#10261b"></i>Strong (≥70%)</span><span><i style="border-color:var(--gold);background:var(--gold-soft)"></i>Average (50–69%)</span><span><i style="border-color:#d36a6a;background:#9a4a4a"></i>Weak (&lt;50%)</span><span><i style="border-style:dashed"></i>Fewer than 3 attempts</span></div>
     <p class="hint">Tap a cell to practise it.</p></section>`;
 }
@@ -877,13 +913,13 @@ function logRow(p){
   ${open?`<div class="delbox"><p><strong>Delete "${esc(p.title)}"?</strong> All ${p.questions.length} questions and your progress on them will be removed. This cannot be undone.</p><label class="label" for="delin">Type DELETE to confirm</label><div class="row"><input id="delin" class="delin" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE"><button class="btn sm danger" id="delgo" data-act="delgo" data-v="${esc(p.id)}" disabled>Delete test</button><button class="btn sm" data-act="delno">Cancel</button></div></div>`:""}</div>`;
 }
 function viewImport(){
-  return `<div class="field" style="gap:6px"><h1>Import</h1><p class="muted">Add question sets. Subjects and sub-topics are created from the file.</p></div>
+  return `<div class="field" style="gap:6px"><h1>Import</h1><p class="muted">Add question sets. Subjects and sub-topics are created from the file. Importing into <strong class="gold">${spaceName()}</strong>.</p></div>
   <section class="card"><h2>Import questions</h2>
   <div class="field"><label class="label" for="impfile">File</label><input type="file" id="impfile" accept=".json,application/json,.txt"></div>
   <div class="field"><label class="label" for="imptext">Or paste JSON</label><textarea id="imptext" spellcheck="false" placeholder='{"subject":"Geography","questions":[...]}'>${esc(S.imp.text)}</textarea></div>
   <div id="imp-out" class="field">${importPreview()}</div></section>
   <section class="card"><h2>Import log</h2><p class="muted">Every test you added, newest first. Deleting a test removes all its questions and your progress on them.</p>
-  ${S.packs.length?`<div>${S.packs.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
+  ${spacePacks().length?`<div>${spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
   ${backupCard()}
   <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
@@ -898,6 +934,7 @@ function viewSetup(){
   <p class="muted">Open <b>index.html</b>, fill in <b>supabaseUrl</b> and <b>supabaseKey</b> in the CONFIG line near the top of the script, upload it again, and follow README.md.</p></section></div>`;
 }
 function render(){
+  document.documentElement.setAttribute("data-space",S.space);
   if(S.auth==="checking"){app.innerHTML=splash();return;}
   if(S.auth==="setup"||S.auth==="error"){app.innerHTML=viewSetup();return;}
   if(S.auth==="login"){app.innerHTML=viewLogin();return;}
@@ -927,6 +964,7 @@ function runParse(){
   clearTimeout(parseTimer);
   parseTimer=setTimeout(()=>{
     const p=S.imp.text.trim()?parseImport(S.imp.text):null;
+    if(p&&p.id&&S.space=="ca"&&!String(p.id).startsWith(CAP))p.id=CAP+p.id;
     S.imp.parsed=p;S.imp.dups=p&&p.questions&&p.questions.length?findSimilar(p):[];
     const out=document.getElementById("imp-out");if(out)out.innerHTML=importPreview();
   },250);
@@ -1119,6 +1157,9 @@ document.addEventListener("click",async e=>{
     case "skip":doSkip();break;
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else render();break;}
+    case "space":{if(v===S.space)break;flush();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
+      S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.nb.subject="";S.confirmDel=null;S.mdText="";
+      S.imp={parsed:null,errors:[],text:"",dups:[],name:""};rebuild();render();window.scrollTo(0,0);break;}
     case "newmode":S.newMode=v;render();break;
     case "next":if(S.quiz)goTo(S.quiz.i+1);break;
     case "prev":if(S.quiz)goTo(S.quiz.i-1);break;
@@ -1129,6 +1170,7 @@ document.addEventListener("click",async e=>{
     case "redo":{const Q=S.quiz;startQuiz(shuffle(Q.uids.filter(u=>!Q.res[u].ok)),{mode:Q.mode,kind:"Redo",label:Q.label});break;}
     case "nbsub":S.nb.subject=v||"";render();window.scrollTo(0,0);break;
     case "heatby":S.heatBy=v;render();break;
+    case "heatall":S.heatAll=!S.heatAll;render();break;
     case "heat":{const s=el.dataset.s,t=el.dataset.t;sel.subjects=new Set([s]);sel.topics=t?new Set([topicKey(s,t)]):new Set();sel.which="prio";sel.pack="all";S.quiz=null;S.tab="practice";S.view="wiz";S.step=2;render();window.scrollTo(0,0);break;}
     case "copymd":{const md=mdFor(openMistakes());try{await navigator.clipboard.writeText(md);S.mdText="";toast("Mistakes copied as markdown");}catch(err){S.mdText=md;render();toast("Select the text and copy it");}break;}
     case "copytpl":try{await navigator.clipboard.writeText(TEMPLATE);toast("Format copied");}catch(err){toast("Select the format text and copy it");}break;
