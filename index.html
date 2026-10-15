@@ -374,6 +374,26 @@ details.nbq[open] .dots{display:none}
 .mback{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:var(--card);border:1px solid var(--rule);border-radius:20px;padding:24px;max-width:460px;width:100%;display:flex;flex-direction:column;gap:14px}
 .modal p{margin:0}
+
+.sol{max-width:96ch;gap:14px;padding:20px 22px}
+.sol p{line-height:1.7;margin:0}
+.sol ul{list-style:none;padding:0;margin:0;gap:8px}
+.sol ul.l0{gap:12px}
+.sol li{position:relative;padding-left:20px;line-height:1.65}
+.sol li::before{content:"";position:absolute;left:3px;top:.72em;width:6px;height:6px;border-radius:50%;background:var(--gold)}
+.sol li.hd{padding-left:0}.sol li.hd::before{display:none}
+.sol li.hd>strong:first-child{color:var(--gold);font-weight:600;font-size:1.02em}
+.sol ul.l1,.sol ul.l2,.sol ul.l3{margin:8px 0 2px 4px;padding-left:16px;border-left:2px solid var(--rule)}
+.sol ul.l1>li::before,.sol ul.l2>li::before,.sol ul.l3>li::before{width:8px;height:2px;border-radius:1px;top:.85em;left:2px;background:var(--muted)}
+.sol ul.l1>li,.sol ul.l2>li,.sol ul.l3>li{padding-left:18px}
+.sol .verdict{border:1px solid var(--good);background:var(--good-soft);border-radius:12px;padding:10px 14px;font-weight:600;color:var(--ink)}
+:root[data-space="ca"]{--ink:#eef1fc;--muted:#b4bfe8;--rule:#27399a;--card:#0c1750;--card2:#101e63}
+:root[data-space="ca"] .sol{background:#13236f;border-color:#2f44b0}
+:root[data-space="ca"] .sol strong{color:#ffe08a}
+:root[data-space="ca"] .sol li.hd>strong:first-child{color:#9fd0ff}
+:root[data-space="ca"] .sol li::before{background:#9fd0ff}
+:root[data-space="ca"] .sol .lead{border-left-color:#9fd0ff}
+:root[data-space="ca"] .sol p,:root[data-space="ca"] .sol li{color:#f1f4ff}
 </style>
 </head>
 <body>
@@ -595,16 +615,40 @@ function parseImport(text){
 /* ---------- solution formatting ---------- */
 function inline(s){return esc(s).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");}
 function fmtSol(text){
-  const lines=String(text).split(/\n/).map(l=>l.trim()).filter(Boolean);
-  let html="",list=[],first=true;
-  const flush=()=>{if(list.length){html+="<ul>"+list.map(x=>"<li>"+inline(x)+"</li>").join("")+"</ul>";list=[];}};
-  for(const l of lines){
+  const raw=String(text).replace(/\t/g,"    ").split(/\n/);
+  const blocks=[];let stack=[],cur=null;
+  const newList=()=>{cur={type:"list",items:[]};blocks.push(cur);stack=[];};
+  for(const line of raw){
+    if(!line.trim())continue;
+    const indent=line.match(/^ */)[0].length,l=line.trim();
     const fm=l.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
-    if(fm){flush();if(imgSafe(fm[2]))html+=figs([{src:fm[2],cap:fm[1]}]);continue;}
-    if(/^[-•]\s+/.test(l)){list.push(l.replace(/^[-•]\s+/,""));continue;}
-    flush();html+=`<p${first?' class="lead"':""}>${inline(l)}</p>`;first=false;
+    if(fm){cur=null;stack=[];if(imgSafe(fm[2]))blocks.push({type:"img",src:fm[2],cap:fm[1]});continue;}
+    const bm=l.match(/^[-\u2022*]\s+(.*)$/);
+    if(bm){
+      if(!cur||cur.type!=="list")newList();
+      let lvl=indent<2?0:Math.min(3,Math.max(1,Math.floor(indent/4)));
+      if(lvl>stack.length)lvl=stack.length;
+      const item={text:bm[1],kids:[]};
+      if(lvl===0)cur.items.push(item);else stack[lvl-1].kids.push(item);
+      stack=stack.slice(0,lvl);stack[lvl]=item;
+      continue;
+    }
+    if(indent>=2&&cur&&cur.type==="list"&&stack.length){stack[stack.length-1].text+="\n"+l;continue;}
+    cur=null;stack=[];blocks.push({type:"p",text:l});
   }
-  flush();return html;
+  const li=(it,d)=>{
+    const t=it.text.split("\n").map(inline).join("<br>");
+    const head=it.kids.length&&/^\*\*[^*]+\*\*:?$/.test(it.text.trim());
+    return `<li class="${head?"hd":""}">${t}${it.kids.length?`<ul class="l${Math.min(d+1,3)}">${it.kids.map(k=>li(k,d+1)).join("")}</ul>`:""}</li>`;
+  };
+  let html="",first=true;
+  for(const b of blocks){
+    if(b.type==="img")html+=figs([{src:b.src,cap:b.cap}]);
+    else if(b.type==="list")html+=`<ul class="l0">${b.items.map(i=>li(i,0)).join("")}</ul>`;
+    else if(/^\**\s*hence\b/i.test(b.text))html+=`<p class="verdict">${inline(b.text)}</p>`;
+    else{html+=`<p${first?' class="lead"':""}>${inline(b.text)}</p>`;first=false;}
+  }
+  return html;
 }
 function solution(q){
   if(!q.exp&&!q.sum&&!(q.simg||[]).length)return "";
