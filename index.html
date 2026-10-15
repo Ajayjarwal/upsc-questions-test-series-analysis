@@ -370,6 +370,10 @@ details.nbq[open] .dots{display:none}
 .cell.low .p{color:var(--muted)}
 .cell.none{border-color:var(--rule)}.cell.none .p{font-size:14px;font-weight:600}
 .cell.weak.low{background:repeating-linear-gradient(135deg,var(--card2) 0 9px,var(--card) 9px 18px)}
+
+.mback{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--card);border:1px solid var(--rule);border-radius:20px;padding:24px;max-width:460px;width:100%;display:flex;flex-direction:column;gap:14px}
+.modal p{margin:0}
 </style>
 </head>
 <body>
@@ -389,7 +393,7 @@ const TEMPLATE = JSON.stringify({
 const BUCKETS=[["b0","Not attempted"],["b1","Under 40%"],["b2","40-59%"],["b3","60-79%"],["b4","80% and above"]];
 const MAXSUBJ=3;
 /* Hosting config. Fill these in when you deploy (see README). Leave empty to run without a login (Claude account or this browser). */
-const CONFIG={supabaseUrl:"https://etdfbbtnthwjsroydxsa.supabase.co",supabaseKey:"sb_publishable_N0g-0D1Gd1hXJOmmrgEKfQ_-LBllhv3",googleLogin:false,requireLogin:true};
+const CONFIG={supabaseUrl:"",supabaseKey:"",googleLogin:false,requireLogin:true};
 const IC={
   quiz:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>',
   smart:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -406,7 +410,7 @@ const S={
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
   nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
-  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:""
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:""
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -552,10 +556,12 @@ function parseImport(text){
   if(Array.isArray(data))arr=data;
   else if(data&&Array.isArray(data.questions)){arr=data.questions;meta=data;}
   else return {errors:['The file needs a "questions" list.'],questions:[]};
-  const paper=meta.paper||{};
-  const title=String(paper.title||meta.title||"Imported set").slice(0,90);
-  const id=slug(paper.id||meta.id||title)||("set-"+Date.now().toString(36));
-  const topSubject=String(meta.subject||paper.subject||"").trim();
+  const paper=meta.paper||{},mm=(meta.meta&&typeof meta.meta==="object")?meta.meta:{};
+  const title=String(paper.title||meta.title||mm.title||"Imported set").slice(0,90);
+  const id=slug(paper.id||meta.id||mm.id||title)||("set-"+Date.now().toString(36));
+  const MON=["january","february","march","april","may","june","july","august","september","october","november","december"];
+  let fileMonth="";{const dm=title.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/i)||title.match(/()(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/i);if(dm)fileMonth=dm[3]+"-"+String(MON.indexOf(dm[2].toLowerCase())+1).padStart(2,"0");}
+  const topSubject=String(meta.subject||paper.subject||mm.subject||"").trim();
   const errors=[],out=[],used=new Set();
   const letters="ABCDEF";
   arr.forEach((r,i)=>{
@@ -572,15 +578,18 @@ function parseImport(text){
     let ans=String(r.answer===undefined?"":r.answer).trim().toUpperCase().replace(/[^A-F1-6]/g,"");
     if(/^[1-6]$/.test(ans))ans=letters[Number(ans)-1];
     if(!opts[ans]){errors.push(lab+": answer \""+(r.answer===undefined?"":r.answer)+"\" does not match an option");return;}
-    let no=parseInt(r.no,10);
+    let no=parseInt(r.no!==undefined?r.no:r.qno,10);
     if(!Number.isInteger(no)||no<1||used.has(no)){no=1;while(used.has(no))no++;}
     used.add(no);
     let src=r.sources||r.source||[];if(!Array.isArray(src))src=String(src).split(/\n+/);
+    if(Array.isArray(r.references))src=src.concat(r.references.map(x=>x&&typeof x==="object"?String(x.url||"").trim()+(x.page?" (p. "+x.page+")":""):String(x||"")));
     src=src.map(x=>String(x).trim()).filter(Boolean);
-    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:String(r.explanation||r.exp||"").trim(),sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||"")});
+    let expl=String(r.explanation||r.exp||"").trim();
+    if(src.length)expl=expl.split("\n").filter(l=>!/^\s*\*\*\s*News\s*:/i.test(l)).join("\n").trim();
+    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||"")});
   });
   out.sort((a,b)=>a.no-b.no);
-  return {id,title,questions:out,errors};
+  return {id,title,questions:out,errors,month:fileMonth};
 }
 
 /* ---------- solution formatting ---------- */
@@ -610,7 +619,6 @@ function header(){
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
   return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><span class="status">${S.ready?where:"Opening your bank..."}</span></div>
-  ${S.space==="ca"?`<div class="camode">CURRENT AFFAIRS MODE</div>`:""}
   <div class="spaces" role="tablist" aria-label="Question space">${[["static","Static"],["ca","Current Affairs"]].map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
   <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
 }
@@ -681,20 +689,20 @@ function viewWiz(){
   const sel=S.sel,subjects=[...new Set(S.qs.map(q=>q.subject))].sort();
   const tabs=`<div class="steps"><span class="${S.step===1?"on":""}">Subjects</span><span class="${S.step===2?"on":""}">Preferences</span></div>`;
   if(S.step===1){
-    const full=sel.subjects.size>=MAXSUBJ;
-    return `${tabs}<div class="field" style="gap:4px"><span class="label">Step 1 of 2</span><h2>Select up to ${MAXSUBJ} subjects</h2><p class="muted">Unattempted and incorrect questions are prioritised.</p></div>
+    const allOn=subjects.length>0&&subjects.every(s=>sel.subjects.has(s));
+    return `${tabs}<div class="row sp"><div class="field" style="gap:4px"><span class="label">Step 1 of 2</span><h2>Select subjects</h2><p class="muted">Unattempted and incorrect questions are prioritised.</p></div><button class="btn sm" data-act="suball">${allOn?"Clear all":"Select all"}</button></div>
     <div class="subj">${subjects.map(s=>{const on=sel.subjects.has(s),n=S.qs.filter(q=>q.subject===s).length;
-      return `<button class="sc" data-act="subj" data-v="${esc(s)}" aria-pressed="${on}" ${!on&&full?"disabled":""}><span class="mono-tile">${esc(mono(s))}</span><span class="meta"><span class="nm">${esc(s)}</span><span class="muted" style="font-size:14px">${n} question${n===1?"":"s"}</span></span><span class="chk">${on?ic("check"):""}</span></button>`;}).join("")}</div>
-    <div class="foot"><span class="muted">${sel.subjects.size} of ${MAXSUBJ} subjects selected</span><div class="row"><button class="btn" data-act="cancel">Cancel</button><button class="btn pri" data-act="next2" ${sel.subjects.size?"":"disabled"}>Next</button></div></div>`;
+      return `<button class="sc" data-act="subj" data-v="${esc(s)}" aria-pressed="${on}"><span class="mono-tile">${esc(mono(s))}</span><span class="meta"><span class="nm">${esc(s)}</span><span class="muted" style="font-size:14px">${n} question${n===1?"":"s"}</span></span><span class="chk">${on?ic("check"):""}</span></button>`;}).join("")}</div>
+    <div class="foot"><span class="muted">${sel.subjects.size} of ${subjects.length} subject${subjects.length===1?"":"s"} selected</span><div class="row"><button class="btn" data-act="cancel">Cancel</button><button class="btn pri" data-act="next2" ${sel.subjects.size?"":"disabled"}>Next</button></div></div>`;
   }
-  const g=groupBySubject(S.qs),chips=[];
-  for(const sub of subjects){if(!sel.subjects.has(sub))continue;for(const [t,list] of g.get(sub)){const k=topicKey(sub,t);chips.push(`<button class="chip" aria-pressed="${sel.topics.has(k)}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`);}}
+  const g=groupBySubject(S.qs),chips=[],allKeys=[];
+  for(const sub of subjects){if(!sel.subjects.has(sub))continue;for(const [t,list] of g.get(sub)){const k=topicKey(sub,t);allKeys.push(k);chips.push(`<button class="chip" aria-pressed="${sel.topics.has(k)}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`);}}
   const matches=pool().length,n=Math.min(effCount(sel),matches);
   const whichOpts=[["prio","Unattempted & incorrect first"],["new","Unattempted only"],["wrong","Incorrect only"],["shuffle","Everything shuffled"]];
   if(latestPack())whichOpts.push(["latest","Latest import only"]);
   return `${tabs}<div class="field" style="gap:4px"><span class="label">Step 2 of 2</span><h2>Set your preferences</h2><p class="gold">${[...sel.subjects].map(esc).join(", ")}</p></div>
   <section class="card">
-    <div class="field"><span class="label">Sub-topics ${sel.topics.size?"":"(all)"}</span><div class="row">${chips.join("")}</div></div>
+    <div class="field"><div class="row sp"><span class="label">Sub-topics ${sel.topics.size?"":"(all)"}</span><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(allKeys))}'>${allKeys.length&&allKeys.every(k=>sel.topics.has(k))?"Clear all":"Select all"}</button></div><div class="row">${chips.join("")}</div></div>
     <div class="field"><span class="label">Which questions</span><div class="seg">${whichOpts.map(([k,l])=>`<button aria-pressed="${sel.which===k}" data-act="which" data-v="${k}">${l}</button>`).join("")}</div></div>
     ${prefsBlock(sel,matches)}
     ${spacePacks().length>1?`<div class="field"><label class="label" for="packsel">Question set</label><select id="packsel" data-change="pack"><option value="all">All sets</option>${spacePacks().map(p=>`<option value="${esc(p.id)}"${sel.pack===p.id?" selected":""}>${esc(p.title)}</option>`).join("")}</select></div>`:""}
@@ -761,7 +769,7 @@ function viewQuiz(){
   let left="",nav="";
   if(exam){
     left=`${answeredCount(Q)} of ${Q.uids.length} answered \u00b7 nothing is revealed until you submit`;
-    nav=`${prevB}<button class="btn" data-act="skip">Skip</button><button class="btn pri" data-act="savenext">Save &amp; Next</button>`;
+    nav=`${prevB}<button class="btn" data-act="skip">Skip</button><button class="btn pri" data-act="savenext">${last?"Save":"Save &amp; Next"}</button>`;
   }else if(locked){
     left=r.ok?"Correct":"Wrong";
     nav=`${prevB}${last?`<button class="btn pri" data-act="finish">Finish</button>`:`<button class="btn pri" data-act="next">Next question</button>`}`;
@@ -775,7 +783,13 @@ function viewQuiz(){
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${verdict}${locked?solution(q):""}
-  </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>`;
+  </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}`;
+}
+function finishModal(Q,exam){
+  const n=Q.uids.length,a=answeredCount(Q),u=n-a;
+  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="modal"><h2 id="mt">${exam?"Submit your test?":"End this session?"}</h2>
+  <p class="muted">You have answered <strong>${a}</strong> of ${n} question${n===1?"":"s"}${u?` and <strong>${u}</strong> ${u===1?"is":"are"} unanswered`:""}.${u?" Unanswered questions are marked as skipped and added to your Notebook.":""}${exam?" You cannot change your answers after submitting.":""}</p>
+  <div class="row"><button class="btn" data-act="finishno">Go back</button><button class="btn pri" data-act="finishok">${exam?"Yes, submit":"Yes, end session"}</button></div></div></div>`;
 }
 function fmtTime(ms){const s=Math.round(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function viewResult(){
@@ -817,6 +831,12 @@ function nbQuestion(q){
   <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
   ${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x</span></div></details>`;
 }
+function bmQuestion(q){
+  const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":""}</span></div>`).join("")}</div>
+  ${solution(q)}</div></details>`;
+}
 function viewNotebook(){
   const back=`<button class="backlink" data-act="home">← Back to Practice</button>`;
   const md=S.mdText?`<div class="field"><label class="label" for="mdbox">Select all and copy</label><textarea id="mdbox" readonly>${esc(S.mdText)}</textarea></div>`:"";
@@ -844,8 +864,8 @@ function viewMarks(){
   const list=bookmarks();
   const head=`<div class="field" style="gap:6px"><h1>Bookmarks</h1><p class="muted">${list.length} saved question${list.length===1?"":"s"}</p></div>`;
   if(!list.length)return head+`<section class="card"><h2>Nothing saved yet</h2><p class="muted">Tap Save on any question, during a quiz or in the Notebook, to keep it here.</p><div><button class="btn pri" data-act="tab" data-v="practice">Go to Practice</button></div></section>`;
-  const g=groupBySubject(list);
-  return head+`<section class="card"><div class="row"><button class="btn pri" data-act="quizmarks">Quiz these ${list.length}</button></div></section>`+[...g].map(([sub,tm])=>`<div class="grp"><header><h3>${esc(sub)}</h3></header>${[...tm].map(([t,qs])=>`<div class="topic"><strong>${esc(t)}</strong>${qs.map(q=>qCard(q,"")).join("")}</div>`).join("")}</div>`).join("");
+  const sorted=list.slice().sort((x,y)=>x.subject.localeCompare(y.subject)||x.topic.localeCompare(y.topic)||x.no-y.no);
+  return head+`<section class="card"><div class="row"><button class="btn pri" data-act="quizmarks">Quiz these ${list.length}</button></div></section><div class="nblist">${sorted.map(bmQuestion).join("")}</div>`;
 }
 
 /* ---------- heat map ---------- */
@@ -907,17 +927,18 @@ function importPreview(){
   if(r.errors.length)bits.push(`<ul class="errs">${r.errors.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join("")}${r.errors.length>8?`<li>and ${r.errors.length-8} more</li>`:""}</ul>`);
   if(r.questions.length){
     const g=groupBySubject(r.questions.map(q=>({...q})));
-    const exists=S.packs.find(p=>p.id===r.id);
+    const exists=!!r.exists&&S.imp.idMode==="replace";
     const withSol=r.questions.filter(q=>q.exp).length,dups=S.imp.dups||[];
     const keep=r.questions.length-dups.filter(d=>d.choice==="old").length;
     bits.push(`<div class="pv scroll"><table><thead><tr><th>Subject</th><th>Sub-topic</th><th>Questions</th></tr></thead><tbody>${[...g].map(([s,tm])=>[...tm].map(([t,qs])=>`<tr><td>${esc(s)}</td><td>${esc(t)}</td><td>${qs.length}</td></tr>`).join("")).join("")}</tbody></table></div>
     <p class="hint">${withSol} of ${r.questions.length} have a solution.</p>
     ${dups.length?`<div class="field"><h3>Similar questions found (${dups.length})</h3><p class="muted">Review each pair. If they are different questions, keep both.</p>${dups.map(dupCard).join("")}</div>`:""}
+    ${r.exists?`<div class="info"><strong>This file has the same set id as a test you already added.</strong> Choose what to do:<div class="seg" style="margin-top:10px">${[["new","Add as a separate test"],["replace","Replace the existing test"]].map(([k,l])=>`<button aria-pressed="${(S.imp.idMode==="replace")===(k==="replace")}" data-act="idmode" data-v="${k}">${l}</button>`).join("")}</div></div>`:""}
     <div class="field"><label class="label" for="impname">Test name (shown in the import log)</label><input id="impname" class="delin" style="width:100%" type="text" maxlength="120" value="${esc(S.imp.name||"")}" placeholder="${esc(r.title)}"></div>
     ${S.space==="ca"?`<div class="field"><label class="label" for="impmonth">Month &amp; year of these questions</label><input id="impmonth" class="delin" type="month" value="${esc(S.imp.month||curMonth())}"><p class="hint">Defaults to today. Change it if these questions belong to another month.</p></div>`:""}
     ${modeSeg()}
     <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} test (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
-    ${exists?`<p class="hint">Same set id exists: its questions are replaced, your progress on matching numbers is kept.</p>`:""}`);
+    ${exists?`<p class="hint">The existing set is replaced by this file. Your progress on matching question numbers is kept.</p>`:""}`);
   }
   return bits.join("");
 }
@@ -981,7 +1002,12 @@ function runParse(){
   clearTimeout(parseTimer);
   parseTimer=setTimeout(()=>{
     const p=S.imp.text.trim()?parseImport(S.imp.text):null;
-    if(p&&p.id&&S.space=="ca"&&!String(p.id).startsWith(CAP))p.id=CAP+p.id;
+    if(p&&p.id){
+      if(S.space=="ca"&&!String(p.id).startsWith(CAP))p.id=CAP+p.id;
+      if(p.month&&S.space=="ca")S.imp.month=p.month;
+      p.exists=!!S.packs.find(x=>x.id===p.id);
+      if(p.exists&&S.imp.idMode!=="replace"){const base=p.id;let n=2;while(S.packs.find(x=>x.id===base+"-"+n))n++;p.id=base+"-"+n;}
+    }
     S.imp.parsed=p;S.imp.dups=p&&p.questions&&p.questions.length?findSimilar(p):[];
     const out=document.getElementById("imp-out");if(out)out.innerHTML=importPreview();
   },250);
@@ -1077,6 +1103,7 @@ function recordSkip(uid){
   p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();queueSave(q.packId);
 }
 function startQuiz(uids,o){
+  S.confirmFin=false;
   if(!uids.length)return;
   o=o||{};
   S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},done:false,elapsed:0};
@@ -1103,7 +1130,7 @@ function doSkip(){
   const uid=Q.uids[Q.i];
   if(Q.mode==="exam"){delete Q.ans[uid];Q.skp[uid]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else render();return;}
   if(!Q.res[uid]){recordSkip(uid);Q.res[uid]={skipped:true,ok:false};}
-  if(Q.i<Q.uids.length-1)goTo(Q.i+1);else finishQuiz();
+  if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{S.confirmFin=true;render();}
 }
 function finishQuiz(){
   const Q=S.quiz;if(!Q||Q.done)return;
@@ -1145,7 +1172,7 @@ async function applyImport(attempt){
   if(!qs.length){toast("Nothing left to add");return;}
   for(const uid of del)await removeQuestion(uid);
   const pack=await addPack({id:r.id,title:(S.imp.name||"").trim()||r.title,questions:qs},false);
-  S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:""};
+  S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};
   const uids=pack.questions.map(q=>pack.id+":"+q.no);
   if(attempt){toast(qs.length+" questions added");startQuiz(uids,{mode:S.newMode,kind:"New import",label:pack.title});}
   else{toast(qs.length+" questions added"+(del.size?", "+del.size+" older replaced":""));S.tab="practice";S.view="home";render();}
@@ -1165,7 +1192,9 @@ document.addEventListener("click",async e=>{
     case "smartgo":{const o=S.smart,uids=smartPool(o.subject,o).slice(0,effCount(o)).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subject||"All subjects"});break;}
     case "attemptlatest":{const lp=latestPack();if(!lp)break;const uids=S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).sort((x,y)=>x.no-y.no).map(q=>q.uid);startQuiz(uids,{mode:S.newMode,kind:"New import",label:lp.title});break;}
     case "quizmarks":startQuiz(shuffle(bookmarks().map(q=>q.uid)),{mode:"practice",kind:"Bookmarks",label:"Saved questions"});break;
-    case "subj":if(sel.subjects.has(v)){sel.subjects.delete(v);for(const k of [...sel.topics])if(k.startsWith(v+"›"))sel.topics.delete(k);}else if(sel.subjects.size<MAXSUBJ)sel.subjects.add(v);render();break;
+    case "suball":{const subs=[...new Set(S.qs.map(q=>q.subject))];if(subs.every(s=>sel.subjects.has(s))){sel.subjects=new Set();sel.topics=new Set();}else sel.subjects=new Set(subs);render();break;}
+    case "topall":{const ks=el.dataset.ks?JSON.parse(el.dataset.ks):[];if(ks.every(k=>sel.topics.has(k)))sel.topics=new Set();else sel.topics=new Set(ks);render();break;}
+    case "subj":if(sel.subjects.has(v)){sel.subjects.delete(v);for(const k of [...sel.topics])if(k.startsWith(v+"›"))sel.topics.delete(k);}else sel.subjects.add(v);render();break;
     case "topic":sel.topics.has(v)?sel.topics.delete(v):sel.topics.add(v);render();break;
     case "which":sel.which=v;render();break;
     case "pc":tgt().count=v==="custom"?"custom":Number(v);render();break;
@@ -1174,15 +1203,18 @@ document.addEventListener("click",async e=>{
     case "pick":doPick(v);break;
     case "skip":doSkip();break;
     case "check":doCheck();break;
-    case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else render();break;}
+    case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
     case "space":{if(v===S.space)break;flush();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
       S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
-      S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:""};rebuild();render();window.scrollTo(0,0);break;}
+      S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
+    case "idmode":S.imp.idMode=v;runParse();break;
     case "newmode":S.newMode=v;render();break;
     case "next":if(S.quiz)goTo(S.quiz.i+1);break;
     case "prev":if(S.quiz)goTo(S.quiz.i-1);break;
     case "goto":goTo(Number(v));break;
-    case "finish":finishQuiz();break;
+    case "finish":if(S.quiz&&!S.quiz.done){S.confirmFin=true;render();}break;
+    case "finishok":S.confirmFin=false;finishQuiz();break;
+    case "finishno":S.confirmFin=false;render();break;
     case "bm":{const q=S.byUid.get(v);if(!q)break;const p=getP(v);p.b=p.b?0:1;queueSave(q.packId);render();break;}
     case "exit":flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "redo":{const Q=S.quiz;startQuiz(shuffle(Q.uids.filter(u=>!Q.res[u].ok)),{mode:Q.mode,kind:"Redo",label:Q.label});break;}
@@ -1241,6 +1273,7 @@ document.addEventListener("keydown",e=>{
     return;
   }
   if(!Q||Q.done||S.tab!=="practice")return;
+  if(S.confirmFin){if(e.key==="Escape"){S.confirmFin=false;render();}return;}
   const tag=(e.target&&e.target.tagName)||"";if(tag==="TEXTAREA"||tag==="INPUT"||tag==="SELECT"||e.metaKey||e.ctrlKey||e.altKey)return;
   const q=S.byUid.get(Q.uids[Q.i]),k=e.key.toUpperCase(),r=Q.res[Q.uids[Q.i]],locked=Q.mode!=="exam"&&r&&!r.skipped;
   let L=null;if(/^[A-F]$/.test(k))L=k;else if(/^[1-6]$/.test(k))L="ABCDEF"[Number(k)-1];
