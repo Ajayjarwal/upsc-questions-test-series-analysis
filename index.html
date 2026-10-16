@@ -353,10 +353,6 @@ details.nbq[open] .dots{display:none}
 .spc{border:1px solid var(--rule);background:transparent;color:var(--muted);padding:7px 16px;border-radius:999px;font-weight:600;font-size:13px;cursor:pointer}
 .spc[aria-selected=true]{background:var(--gold-soft);border-color:var(--gold);color:var(--gold)}
 
-:root[data-space="ca"]{--bg:#000;--card:#0a1543;--card2:#070f33;--rule:#1c2c75;--muted:#9fabdb;--gold:#8aa4ff;--gold-ink:#000a2e;--gold-soft:#101f66;--gold-line:#2c40a0;--pill:#fff;--pill-ink:#0a1543}
-.camode{font-size:11px;font-weight:700;letter-spacing:.28em;color:#8aa4ff;border:1px solid #1c2c75;background:#0a1543;border-radius:8px;padding:5px 12px;align-self:flex-start;width:max-content}
-:root[data-space="ca"] .logo{text-shadow:0 0 6px #6f8cff,0 0 18px #3a55e0}
-:root[data-space="ca"] .qbar{background:#02061c;border-top-color:#1c2c75}
 
 .hgroups{display:flex;flex-direction:column;gap:16px}
 .hsub{border:1px solid var(--rule);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:14px}
@@ -387,13 +383,36 @@ details.nbq[open] .dots{display:none}
 .sol ul.l1>li::before,.sol ul.l2>li::before,.sol ul.l3>li::before{width:8px;height:2px;border-radius:1px;top:.85em;left:2px;background:var(--muted)}
 .sol ul.l1>li,.sol ul.l2>li,.sol ul.l3>li{padding-left:18px}
 .sol .verdict{border:1px solid var(--good);background:var(--good-soft);border-radius:12px;padding:10px 14px;font-weight:600;color:var(--ink)}
-:root[data-space="ca"]{--ink:#eef1fc;--muted:#b4bfe8;--rule:#27399a;--card:#0c1750;--card2:#101e63}
-:root[data-space="ca"] .sol{background:#13236f;border-color:#2f44b0}
-:root[data-space="ca"] .sol strong{color:#ffe08a}
-:root[data-space="ca"] .sol li.hd>strong:first-child{color:#9fd0ff}
-:root[data-space="ca"] .sol li::before{background:#9fd0ff}
-:root[data-space="ca"] .sol .lead{border-left-color:#9fd0ff}
-:root[data-space="ca"] .sol p,:root[data-space="ca"] .sol li{color:#f1f4ff}
+
+/* ---- themes: dark (default, both spaces) and paper light ---- */
+:root{--key:#ffd27a;--hd:var(--gold);--pn-cur:#fff;--skipbg:#26282e;--logo:#fff;--logo-glow:0 0 6px #5ab0ff,0 0 18px #2f6bff;--qbar:#121419;--sbg:#10261b;--wbg:#2d1a1c;--wtx:#ff9a9a;--solbg:var(--card)}
+.sol strong{color:var(--key);font-weight:700}
+.sol li.hd>strong:first-child{color:var(--hd)}
+.logo{color:var(--logo);text-shadow:var(--logo-glow)}
+.qbar{background:var(--qbar)}
+.pn.cur,.plegend i.cur{border-color:var(--pn-cur)}
+.pn.skip,.note.skip{background:var(--skipbg)}
+.cell.strong{background:var(--sbg)}.cell.weak{background:var(--wbg)}.cell.weak .p,.hspct.weak{color:var(--wtx)}
+.sol{background:var(--solbg)}
+.tgl{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:999px;border:1px solid var(--rule);background:transparent;color:var(--gold);cursor:pointer;flex:none}
+.tgl:hover{background:var(--gold-soft)}
+.tgl svg{width:18px;height:18px}
+.hdr-r{display:flex;align-items:center;gap:12px}
+:root[data-theme="light"]{
+  --bg:#f2efe6;--card:#fbf9f3;--card2:#f4f0e4;--ink:#1b1b1b;--muted:#5f5b50;--rule:#d9d2c0;
+  --gold:#9a4b00;--gold-ink:#fff;--gold-soft:#f6e6d0;--gold-line:#e0b98a;--pill:#1b1b1b;--pill-ink:#fff;
+  --good:#1f7a4d;--good-soft:#dff0e5;--bad:#b3261e;--bad-soft:#f8dcd9;
+  --h0:#e8e3d4;--h1:#e8a8a0;--h2:#e6c978;--h3:#9fcf9f;--h4:#4fae77;
+  --key:#0b5d3b;--hd:#9a4b00;--pn-cur:#1b1b1b;--skipbg:#ebe6d6;--logo:#1b1b1b;--logo-glow:none;--qbar:#fbf9f3;
+  --sbg:#e3f2e8;--wbg:#fbe6e3;--wtx:#b3261e;--solbg:#ffffff;color-scheme:light}
+:root[data-theme="light"] .mode[aria-pressed=true] span{color:var(--gold)}
+:root[data-theme="light"] .cell.weak{border-color:#c4554b}
+:root[data-theme="light"] .cell.weak.conf{background:#c4554b}
+:root[data-theme="light"] .delbox{background:#fbe6e3;border-color:#d99a94}
+:root[data-theme="light"] .hsbar.weak{background:#c4554b}
+:root[data-theme="light"] .focus i{background:#c4554b}
+:root[data-theme="light"] .mback{background:rgba(40,35,20,.45)}
+:root[data-theme="light"] .sol li.hd>strong:first-child{font-weight:700}
 </style>
 </head>
 <body>
@@ -430,7 +449,7 @@ const S={
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
   nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
-  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:""
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:"",theme:(()=>{try{return localStorage.getItem("rd_theme")==="light"?"light":"dark";}catch(e){return "dark";}})()
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -658,11 +677,13 @@ function solution(q){
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
 /* ---------- view helpers ---------- */
+const SUN=`<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+const MOON=`<svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
 function header(){
   const open=openMistakes().length;
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
-  return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><span class="status">${S.ready?where:"Opening your bank..."}</span></div>
+  return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span><button class="tgl" data-act="theme" aria-label="${S.theme==='light'?'Switch to dark mode':'Switch to light mode'}" title="${S.theme==='light'?'Dark mode':'Light mode'}">${S.theme==='light'?MOON:SUN}</button></div></div>
   <div class="spaces" role="tablist" aria-label="Question space">${[["static","Static"],["ca","Current Affairs"]].map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
   <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
 }
@@ -941,7 +962,7 @@ function viewHeat(){
   <section class="card"><div class="row sp"><div><h2>${by==="topic"?"Topics":"Subjects"} ${showAll?"overview":"you've attempted"}</h2><p class="muted">${by==="topic"?`${nShown} topic${nShown===1?"":"s"} across ${groups.length} subject${groups.length===1?"":"s"}`:`${nShown} subject${nShown===1?"":"s"}`} · bigger cell = more questions attempted</p></div>
     <div class="viewtog"><button aria-pressed="${by==="topic"}" data-act="heatby" data-v="topic">By topic</button><button aria-pressed="${by==="subject"}" data-act="heatby" data-v="subject">By subject</button><span class="vsep"></span><button aria-pressed="${showAll}" data-act="heatall">Show unattempted</button></div></div>
     ${by==="topic"?(groups.length?`<div class="hgroups">${groups.map(gr=>`<div class="hsub"><div class="hshead"><i class="hsbar ${cls(gr)}"></i><strong>${esc(gr.sub)}</strong><span class="hspct ${cls(gr)}">${gr.p===null?"\u2014":gr.p+"%"}</span><span class="muted">${gr.s.att?`${gr.s.ok} of ${gr.s.att} correct \u00b7 `:"Not attempted \u00b7 "}${gr.items.length} topic${gr.items.length===1?"":"s"}</span></div><div class="cells">${gr.items.map(cellHtml).join("")}</div></div>`).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`):(cells.length?`<div class="cells">${cells.map(cellHtml).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`)}
-    <div class="lg2"><span><i style="border-color:var(--good);background:#10261b"></i>Strong (≥70%)</span><span><i style="border-color:var(--gold);background:var(--gold-soft)"></i>Average (50–69%)</span><span><i style="border-color:#d36a6a;background:#9a4a4a"></i>Weak (&lt;50%)</span><span><i style="border-style:dashed"></i>Fewer than 3 attempts</span></div>
+    <div class="lg2"><span><i style="border-color:var(--good);background:var(--sbg)"></i>Strong (≥70%)</span><span><i style="border-color:var(--gold);background:var(--gold-soft)"></i>Average (50–69%)</span><span><i style="border-color:#d36a6a;background:var(--wbg)"></i>Weak (&lt;50%)</span><span><i style="border-style:dashed"></i>Fewer than 3 attempts</span></div>
     <p class="hint">Tap a cell to practise it.</p></section>`;
 }
 
@@ -1016,7 +1037,7 @@ function viewSetup(){
   <p class="muted">Open <b>index.html</b>, fill in <b>supabaseUrl</b> and <b>supabaseKey</b> in the CONFIG line near the top of the script, upload it again, and follow README.md.</p></section></div>`;
 }
 function render(){
-  document.documentElement.setAttribute("data-space",S.space);
+  document.documentElement.setAttribute("data-space",S.space);document.documentElement.setAttribute("data-theme",S.theme);
   if(S.auth==="checking"){app.innerHTML=splash();return;}
   if(S.auth==="setup"||S.auth==="error"){app.innerHTML=viewSetup();return;}
   if(S.auth==="login"){app.innerHTML=viewLogin();return;}
@@ -1248,6 +1269,7 @@ document.addEventListener("click",async e=>{
     case "skip":doSkip();break;
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
+    case "theme":{S.theme=S.theme==="light"?"dark":"light";try{localStorage.setItem("rd_theme",S.theme);}catch(err){}render();break;}
     case "space":{if(v===S.space)break;flush();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
       S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
       S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
