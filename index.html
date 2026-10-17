@@ -413,6 +413,13 @@ details.nbq[open] .dots{display:none}
 :root[data-theme="light"] .focus i{background:#c4554b}
 :root[data-theme="light"] .mback{background:rgba(40,35,20,.45)}
 :root[data-theme="light"] .sol li.hd>strong:first-child{font-weight:700}
+
+.cfrow{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.cfrow .pbtn{padding:8px 14px;font-size:14px;border-radius:999px}
+.cfrow .pbtn[aria-pressed=true],.cfrow .pbtn[aria-pressed=true]:hover{border-color:var(--gold);background:var(--gold-soft);color:var(--gold)}
+.chips .pbtn{flex:none}
+.gt{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:8px 12px;font-size:15px;align-items:center}
+.focus.tap{cursor:pointer}.focus.tap:hover{border-color:var(--gold-line)}
 </style>
 </head>
 <body>
@@ -550,6 +557,38 @@ function itemsFor(pid){
   for(const q of p.questions){const r=S.prog[pid+":"+q.no];if(r)items[q.no]=r;}
   return items;
 }
+const dayKey=t=>{const d=t?new Date(t):new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+const addDays=(k,n)=>{const a=k.split("-").map(Number);return dayKey(new Date(a[0],a[1]-1,a[2]+n).getTime());};
+const BOX_DAYS=[0,1,2,4,8,16],SLOW_S=90,CLEAR_DAYS=3,DUE_CAP=25;
+const CONF={s:"Sure",h:"50-50",g:"Guess"},WHY={k:"Didn't know",c:"Confused options",m:"Misread",s:"Silly mistake"};
+const dueDay=p=>{if(!p||!p.a)return null;return p.dd||addDays(dayKey(p.t||Date.now()),p.l==="c"?2:1);};
+const Z2=1.28*1.28,wilsonAcc=(ok,n)=>n?(ok/n+Z2/(2*n))/(1+Z2/n):0.5;
+function topicScore(qs){
+  let att=0,ok=0,cw=0,last=0;
+  for(const q of qs){const p=S.prog[q.uid];if(!p||!p.a)continue;att++;if(p.l==="c")ok++;if(p.l==="w"&&p.cf==="s")cw++;if(p.t>last)last=p.t;}
+  if(!att)return null;
+  const adj=wilsonAcc(ok,att),days=last?Math.max(0,Math.floor((Date.now()-last)/86400000)):0;
+  return {att,ok,adj,cw,days,score:0.6*(1-adj)+0.2*(cw/att)+0.2*Math.min(1,days/14)};
+}
+function interleave(list){
+  const rest=list.slice(),out=[];let l1="",l2="";
+  while(rest.length){
+    const key=q=>topicKey(q.subject,q.topic);
+    let k=rest.findIndex(q=>key(q)!==l1&&key(q)!==l2);
+    if(k<0)k=rest.findIndex(q=>key(q)!==l1);
+    if(k<0)k=0;
+    const q=rest.splice(k,1)[0];out.push(q);l2=l1;l1=key(q);
+  }
+  return out;
+}
+const dueList=()=>{const td=dayKey();return S.qs.filter(q=>{const d=dueDay(S.prog[q.uid]);return d&&d<=td;}).sort((a,b)=>dueDay(S.prog[a.uid]).localeCompare(dueDay(S.prog[b.uid]))||priority(b)-priority(a));};
+function tickQ(){
+  const Q=S.quiz;if(!Q||Q.done||!Q.t0)return;
+  const now=Date.now(),uid=Q.uids[Q.i],r=uid&&Q.res[uid];
+  if(uid&&!(Q.mode!=="exam"&&r&&!r.skipped))Q.tm[uid]=(Q.tm[uid]||0)+Math.min(now-Q.t0,300000);
+  Q.t0=now;
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")tickQ();else if(S.quiz&&!S.quiz.done)S.quiz.t0=Date.now();});
 const getP=uid=>S.prog[uid]||(S.prog[uid]={a:0,c:0,w:0,sk:0,l:"",m:0,x:"",b:0,t:0});
 let saveSet=new Set(),saveTimer=0;
 function queueSave(pid){saveSet.add(pid);clearTimeout(saveTimer);saveTimer=setTimeout(flush,700);}
@@ -699,10 +738,10 @@ function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor
 const latestPack=()=>spacePacks().filter(p=>p.ts).sort((a,b)=>b.ts-a.ts)[0]||null;
 const effCount=o=>o.count==="custom"?Math.max(1,Math.min(200,parseInt(o.custom,10)||1)):o.count;
 const tgt=()=>S.view==="smart"?S.smart:S.sel;
-const priority=q=>{const p=S.prog[q.uid]||{};const w=p.w||0,sk=p.sk||0;return w>=2||w+sk>=3?3:w===1?2:1;};
+const priority=q=>{const p=S.prog[q.uid]||{};const w=p.w||0,sk=p.sk||0;return w>=2||w+sk>=3||(p.l==="w"&&p.cf==="s")?3:w===1?2:1;};
 const PRI={3:"High priority",2:"Mid priority",1:"Low priority"};
 function smartPool(sub,o){
-  return openMistakes().filter(q=>(!sub||q.subject===sub)&&monthOk(o,q)).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
+  return openMistakes().filter(q=>(!sub||q.subject===sub)&&monthOk(o,q)&&!((S.prog[q.uid].cd||[]).includes(dayKey()))).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
 }
 function pool(){
   const s=S.sel,lp=latestPack();
@@ -721,7 +760,8 @@ function pool(){
 function pickSet(){
   const s=S.sel,p=pool();
   const ordered=s.which==="shuffle"?shuffle(p):s.which==="latest"?p.slice().sort((a,b)=>a.no-b.no):shuffle(p).sort((a,b)=>rank(a)-rank(b));
-  return ordered.slice(0,effCount(s)).map(q=>q.uid);
+  const take=ordered.slice(0,effCount(s));
+  return (s.which==="latest"?take:interleave(take)).map(q=>q.uid);
 }
 function prefsBlock(o,avail){
   const eff=effCount(o);
@@ -732,13 +772,15 @@ function prefsBlock(o,avail){
 }
 function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
+  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length,due=dueList().length,anyAtt=S.qs.some(q=>S.prog[q.uid]&&S.prog[q.uid].a);
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
   return `<div class="field" style="gap:6px"><h1>Practice</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
   ${has?"":emptyBank()}
   ${lp&&fresh?`<div class="newbar"><div><strong>New: ${esc(lp.title)}</strong><div class="muted" style="font-size:14px">${fresh} question${fresh===1?"":"s"} not attempted yet</div></div><div class="row">${modeSeg()}<button class="btn pri" data-act="attemptlatest">Attempt only these</button></div></div>`:""}
+  ${has&&anyAtt?`<div class="newbar"><div><strong>Due today: ${due}</strong><div class="muted" style="font-size:14px">${due?`Revise before you forget${due>DUE_CAP?` \u00b7 today's round has the ${DUE_CAP} most overdue`:""}`:"Nothing due. Reviews are scheduled automatically after every answer."}</div></div><button class="btn pri" data-act="duego" ${due?"":"disabled"}>Start review${due?` (${Math.min(due,DUE_CAP)})`:""}</button></div>`:""}
   <div class="grid2">
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
-    <div class="card${mis?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first</p><p class="hint">${mis?`${mis} mistake${mis===1?"":"s"} ready to reattempt`:"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${mis?"":"disabled"}>Start Smart Quiz</button></div>
+    <div class="card${ready?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first, topics mixed</p><p class="hint">${ready?`${ready} mistake${ready===1?"":"s"} ready to reattempt${mis>ready?` \u00b7 ${mis-ready} already done today`:""}`:mis?"All mistakes answered correctly today. They return tomorrow":"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${ready?"":"disabled"}>Start Smart Quiz</button></div>
   </div>
   <div class="card"><div class="row"><div class="icon">${ic("book")}</div><h2>Personal Mistakes Notebook</h2></div>
     <p class="muted">Every question you got wrong or skipped, with the correct answer and solution</p>
@@ -829,7 +871,10 @@ function viewQuiz(){
     else if(cur===L)cls+=" sel";
     return `<button class="${cls}" data-act="pick" data-v="${L}" role="radio" aria-checked="${cur===L}" ${locked?"disabled":""}><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
   }).join("");
-  const verdict=!locked?"":r.ok?`<p class="note">Correct.${r.cleared?" Cleared from your Notebook.":""}</p>`:`<p class="note bad">Wrong. Added to your Notebook.</p>`;
+  const tmx=r&&r.tm?` \u00b7 ${r.tm}s${r.slow?" (slow, aim under 72s)":""}`:"",cfx=r&&r.cf?` \u00b7 ${CONF[r.cf]}`:"";
+  const verdict=!locked?"":r.ok?`<p class="note">Correct.${r.cleared?" Cleared from your Notebook.":r.wasM?` Correct on ${r.days} of ${CLEAR_DAYS} days to clear it.`:""}${cfx}${tmx}</p>`:`<p class="note bad">Wrong. Added to your Notebook.${r.cf==="s"?" You were sure, so it is high priority.":cfx}${tmx}</p>`;
+  const cfRow=(!locked&&cur)?`<div class="cfrow"><span class="label">How sure are you?</span><div class="chips">${["s","h","g"].map(k=>`<button class="pbtn" aria-pressed="${Q.cf[uid]===k}" data-act="conf" data-v="${k}">${CONF[k]}</button>`).join("")}</div><span class="hint">Optional. Helps catch lucky guesses.</span></div>`:"";
+  const whyRow=(locked&&!r.ok)?whyChips(uid):"";
   const prevB=Q.i>0?`<button class="btn" data-act="prev">Previous</button>`:"";
   let left="",nav="";
   if(exam){
@@ -847,8 +892,12 @@ function viewQuiz(){
   <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
-  ${verdict}${locked?solution(q):""}
+  ${cfRow}${verdict}${whyRow}${locked?solution(q):""}
   </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}`;
+}
+function whyChips(uid){
+  const cur=(S.prog[uid]||{}).wy;
+  return `<div class="cfrow"><span class="label">Why did you miss it?</span><div class="chips">${Object.keys(WHY).map(k=>`<button class="pbtn" aria-pressed="${cur===k}" data-act="why" data-v="${k}" data-u="${esc(uid)}">${WHY[k]}</button>`).join("")}</div></div>`;
 }
 function finishModal(Q,exam){
   const n=Q.uids.length,a=answeredCount(Q),u=n-a;
@@ -857,13 +906,24 @@ function finishModal(Q,exam){
   <div class="row"><button class="btn" data-act="finishno">Go back</button><button class="btn pri" data-act="finishok">${exam?"Yes, submit":"Yes, end session"}</button></div></div></div>`;
 }
 function fmtTime(ms){const s=Math.round(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function guessBlock(R,score){
+  const rows=[["s","Sure"],["h","50-50"],["g","Guess"],["","Not tagged"]].map(([k,l])=>{const L=R.filter(r=>!r.skipped&&(r.cf||"")===k),c=L.filter(r=>r.ok).length,w=L.length-c;return {k,l,n:L.length,c,net:Math.round((c*2-w*0.66)*100)/100};}).filter(x=>x.n);
+  if(!rows.some(x=>x.k))return "";
+  const risky=rows.filter(x=>x.k==="g"||x.k==="h"),rn=risky.reduce((a,x)=>a+x.net,0),rc=risky.reduce((a,x)=>a+x.n,0);
+  const gnet=(rows.find(x=>x.k==="g")||{net:0}).net;
+  const verdict=!rc?"You were sure about everything you answered.":rn>=0?`Your 50-50 and guess answers earned <strong>+${Math.round(rn*100)/100}</strong> marks. Break-even accuracy is 25%, so keep attempting when you can cut two options.`:`Your 50-50 and guess answers cost <strong>${Math.abs(Math.round(rn*100)/100)}</strong> marks. Skip when you cannot eliminate at least one option.`;
+  return `<section class="card"><h3>Guess tracker</h3><div class="gt"><span class="label">Confidence</span><span class="label">Answered</span><span class="label">Right</span><span class="label">Net marks</span>${rows.map(x=>`<span>${x.l}</span><span>${x.n}</span><span>${x.c}</span><span>${x.net>0?"+":""}${x.net}</span>`).join("")}</div>
+  <p>${verdict}</p>${gnet?`<p class="muted">Score without your Guess answers: ${Math.round((score-gnet)*100)/100}</p>`:""}</section>`;
+}
 function viewResult(){
   const Q=S.quiz,n=Q.uids.length,R=Q.uids.map(u=>({u,...Q.res[u]}));
   const c=R.filter(r=>r.ok).length,sk=R.filter(r=>r.skipped).length,w=n-c-sk;
   const att=c+w,acc=att?Math.round(c/att*100):0,score=Math.round((c*2-w*0.66)*100)/100;
   const wasM=R.filter(r=>r.wasM&&!r.skipped).length,cl=R.filter(r=>r.cleared).length,added=w+sk;
-  const banner=wasM?`<strong>Cleared ${cl} of ${wasM} attempted</strong><span class="muted">The rest stay in your Notebook until you get them right in a Smart Quiz</span>`:added?`<strong>${added} added to your Notebook</strong><span class="muted">Reattempt them any time with a Smart Quiz</span>`:`<strong>Clean sheet</strong><span class="muted">No mistakes in this session</span>`;
+  const banner=wasM?`<strong>Cleared ${cl} of ${wasM} attempted</strong><span class="muted">The rest stay in your Notebook until you get them right with confidence on ${CLEAR_DAYS} different days</span>`:added?`<strong>${added} added to your Notebook</strong><span class="muted">Reattempt them any time with a Smart Quiz</span>`:`<strong>Clean sheet</strong><span class="muted">No mistakes in this session</span>`;
   const missed=R.filter(r=>!r.ok).map(r=>r.u);
+  const timed=R.filter(r=>r.tm>0),avgT=timed.length?Math.round(timed.reduce((x,r)=>x+r.tm,0)/timed.length):0;
+  const slowN=R.filter(r=>r.ok&&r.slow).length,sureW=R.filter(r=>!r.skipped&&!r.ok&&r.cf==="s").length;
   return `<section class="card"><div class="row sp"><h1 style="font-size:30px">Session summary</h1><button class="btn" data-act="exit">Back to Practice</button></div>
   <div class="chips"><span class="tag plain">${esc(Q.kind)}</span><span class="tag plain">${esc(Q.label)}</span><span class="tag plain">${n} question${n===1?"":"s"}</span><span class="tag plain">${Q.mode==="exam"?"Exam":"Practice"}</span></div></section>
   <div class="sumgrid">
@@ -873,7 +933,11 @@ function viewResult(){
     <div class="tile2"><span class="label">Accuracy</span><span class="v">${acc}%</span></div>
     <div class="tile2"><span class="label">Score</span><span class="v">${score} / ${n*2}</span><span class="hint">+2 right, -0.66 wrong</span></div>
     <div class="tile2"><span class="label">Time taken</span><span class="v">${fmtTime(Q.elapsed||0)}</span></div>
+    <div class="tile2"><span class="label">Avg per question</span><span class="v">${avgT?avgT+"s":"-"}</span><span class="hint">Target about 72s</span></div>
+    <div class="tile2"><span class="label">Correct but slow</span><span class="v">${slowN}</span><span class="hint">Over ${SLOW_S}s each</span></div>
+    <div class="tile2"><span class="label">Sure but wrong</span><span class="v r">${sureW}</span><span class="hint">Revise these first</span></div>
   </div>
+  ${guessBlock(R,score)}
   <div class="banner">${banner}</div>
   <div class="row"><button class="btn pri" data-act="review">Review</button>${missed.length?`<button class="btn" data-act="redo">Redo the ${missed.length} missed</button>`:""}<button class="btn" data-act="tab" data-v="notebook" data-quizdone="1">Open Notebook</button></div>`;
 }
@@ -892,9 +956,9 @@ function qCard(q,extra,pickArg,status){
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
-  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
-  ${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x</span></div></details>`;
+  ${picked?whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span></div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
@@ -934,6 +998,22 @@ function viewMarks(){
 }
 
 /* ---------- heat map ---------- */
+function insightsHtml(){
+  let cs=0,cn=0,gs=0,gn=0,tt=0,tn=0,slow=0,wt=0;const why={k:0,c:0,m:0,s:0};
+  for(const q of S.qs){const p=S.prog[q.uid];if(!p||!p.a)continue;
+    if(p.cf==="s"){cn++;if(p.l==="c")cs++;}
+    if(p.cf==="g"){gn++;if(p.l==="c")gs++;}
+    if(p.tn){tt+=p.ts||0;tn+=p.tn;}
+    if(p.sl)slow++;
+    if(p.w>0&&p.wy&&why[p.wy]!==undefined){why[p.wy]++;wt++;}}
+  if(!(cn||gn||tn||wt))return "";
+  const pc=(a,b)=>b?Math.round(a/b*100)+"%":"-";
+  const note=cn>=3&&cs/cn<0.8?`<p class="note bad">Overconfident: you are right only ${pc(cs,cn)} of the time when you are sure. Re-check the "sure but wrong" questions.</p>`:cn>=3?`<p class="note">Well calibrated: your sure answers are right ${pc(cs,cn)} of the time.</p>`:"";
+  return `<section class="card"><h3>Learning signals</h3>
+  <div class="field" style="gap:8px">${cn?`<div class="dotrow"><span>Right when Sure</span><strong>${pc(cs,cn)} (${cn})</strong></div>`:""}${gn?`<div class="dotrow"><span>Right when Guessing</span><strong>${pc(gs,gn)} (${gn})</strong></div>`:""}${tn?`<div class="dotrow"><span>Average time per question</span><strong>${Math.round(tt/tn)}s</strong></div>`:""}${tn?`<div class="dotrow"><span>Correct but slow (over ${SLOW_S}s)</span><strong>${slow}</strong></div>`:""}</div>
+  ${note}
+  ${wt?`<div class="field" style="gap:8px"><span class="label">Why you miss questions</span>${Object.keys(WHY).filter(k=>why[k]).map(k=>`<div class="dotrow"><span>${WHY[k]}</span><strong>${why[k]}</strong></div>`).join("")}</div>`:`<p class="hint">Tag why you missed a question (in the quiz or the Notebook) to see your pattern here.</p>`}</section>`;
+}
 function viewHeat(){
   const head=`<div class="field" style="gap:6px"><h1>Memory Heatmap</h1><p class="muted">Based on your latest answer to every question you've attempted</p></div>`;
   if(!S.qs.length)return head+emptyBank();
@@ -941,7 +1021,7 @@ function viewHeat(){
   const topics=[],groups=[],showAll=!!S.heatAll;
   for(const [sub,tm] of g){
     const items=[];
-    for(const [t,qs] of tm){const s=stat(qs);if(s.att||showAll)items.push({name:t,sub,t,s,p:s.att?pct(s):null,n:qs.length});if(s.att)topics.push({name:t,sub,t,s,p:pct(s)});}
+    for(const [t,qs] of tm){const s=stat(qs);if(s.att||showAll)items.push({name:t,sub,t,s,p:s.att?pct(s):null,n:qs.length});if(s.att)topics.push({name:t,sub,t,s,p:pct(s),f:topicScore(qs)});}
     const ss=stat([...tm.values()].flat());
     if(items.length)groups.push({sub,s:ss,p:ss.att?pct(ss):null,items:items.sort((a,b)=>b.s.att-a.s.att||(a.p===null)-(b.p===null)||(a.p||0)-(b.p||0))});
   }
@@ -951,14 +1031,15 @@ function viewHeat(){
   const cls=x=>x.p===null?"none":x.p>=70?"strong":x.p>=50?"avg":"weak";
   const conf=topics.filter(x=>x.s.att>=3);
   const nStrong=conf.filter(x=>cls(x)==="strong").length,nAvg=conf.filter(x=>cls(x)==="avg").length,nWeak=conf.filter(x=>cls(x)==="weak").length;
-  const focus=conf.filter(x=>x.p<70).sort((a,b)=>a.p-b.p||b.s.att-a.s.att).slice(0,5);
+  const focus=topics.filter(x=>x.f&&(x.f.adj<0.7||x.f.cw>0)).sort((a,b)=>b.f.score-a.f.score).slice(0,5);
   const by=S.heatBy,cells=subs.slice().sort((a,b)=>b.s.att-a.s.att||(a.p||0)-(b.p||0));
   const cellHtml=x=>`<button class="cell ${cls(x)}${x.s.att>=3?" conf":" low"}" style="--g:${Math.max(1,x.s.att)}" data-act="heat" data-s="${esc(x.sub||x.subKey)}" data-t="${esc(x.t)}"><span><span class="n">${esc(x.name)}</span>${x.sub&&by!=="topic"?`<span class="s" style="display:block">${esc(x.sub)}</span>`:by==="topic"?"":`<span class="s" style="display:block">${x.s.ok}/${x.s.att} right</span>`}</span><span class="p">${x.p===null?"Not attempted":x.p+"%"}</span></button>`;
   const nShown=by==="topic"?groups.reduce((a,b)=>a+b.items.length,0):cells.length;
   const accP=pct(all);
   return head+`<section class="card"><div class="hm"><div class="field" style="gap:12px"><span class="label">Overall accuracy</span><span class="acc">${accP===null?"-":accP+"%"}</span><span class="muted">${all.ok} of ${all.att} questions correct</span>
     <div class="field" style="gap:8px;margin-top:6px"><div class="dotrow"><span><i class="dot2" style="background:var(--good)"></i>Strong topics</span><strong>${nStrong}</strong></div><div class="dotrow"><span><i class="dot2" style="background:var(--gold)"></i>Average topics</span><strong>${nAvg}</strong></div><div class="dotrow"><span><i class="dot2" style="background:#e06a6a"></i>Weak topics</span><strong>${nWeak}</strong></div></div></div>
-    <div class="field"><strong class="row" style="gap:10px"><span class="gold">${ic("quiz")}</span>Focus next</strong>${focus.length?focus.map(x=>`<div class="focus"><i></i><div><strong>${esc(x.name)}</strong><div class="muted" style="font-size:14px">${esc(x.sub)} · ${x.p}% (${x.s.ok}/${x.s.att})</div></div></div>`).join(""):`<p class="muted">${all.att?"No weak or average topics with 3+ attempts yet. Keep going.":"Take a quiz and your weak topics appear here."}</p>`}</div></div></section>
+    <div class="field"><strong class="row" style="gap:10px"><span class="gold">${ic("quiz")}</span>Focus next</strong><p class="hint">Ranked by estimated accuracy (fair to topics with few attempts), confident mistakes and days since you last practised. Tap one to practise it.</p>${focus.length?focus.map(x=>`<div class="focus tap" role="button" tabindex="0" data-act="heat" data-s="${esc(x.sub)}" data-t="${esc(x.t)}"><i></i><div><strong>${esc(x.name)}</strong><div class="muted" style="font-size:14px">${esc(x.sub)} · ${x.p}% (${x.s.ok}/${x.s.att})${x.s.att<3?" · limited data":""}</div><div class="chips" style="margin-top:6px">${x.f.cw?`<span class="chip2 bad">${x.f.cw} confident wrong</span>`:""}${x.f.days>=3?`<span class="chip2">last practised ${x.f.days}d ago</span>`:""}</div></div></div>`).join(""):`<p class="muted">${all.att?"Nothing needs focus right now. Nice work.":"Take a quiz and your weak topics appear here."}</p>`}</div></div></section>
+  ${insightsHtml()}
   <section class="card"><div class="row sp"><div><h2>${by==="topic"?"Topics":"Subjects"} ${showAll?"overview":"you've attempted"}</h2><p class="muted">${by==="topic"?`${nShown} topic${nShown===1?"":"s"} across ${groups.length} subject${groups.length===1?"":"s"}`:`${nShown} subject${nShown===1?"":"s"}`} · bigger cell = more questions attempted</p></div>
     <div class="viewtog"><button aria-pressed="${by==="topic"}" data-act="heatby" data-v="topic">By topic</button><button aria-pressed="${by==="subject"}" data-act="heatby" data-v="subject">By subject</button><span class="vsep"></span><button aria-pressed="${showAll}" data-act="heatall">Show unattempted</button></div></div>
     ${by==="topic"?(groups.length?`<div class="hgroups">${groups.map(gr=>`<div class="hsub"><div class="hshead"><i class="hsbar ${cls(gr)}"></i><strong>${esc(gr.sub)}</strong><span class="hspct ${cls(gr)}">${gr.p===null?"\u2014":gr.p+"%"}</span><span class="muted">${gr.s.att?`${gr.s.ok} of ${gr.s.att} correct \u00b7 `:"Not attempted \u00b7 "}${gr.items.length} topic${gr.items.length===1?"":"s"}</span></div><div class="cells">${gr.items.map(cellHtml).join("")}</div></div>`).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`):(cells.length?`<div class="cells">${cells.map(cellHtml).join("")}</div>`:`<p class="muted">Nothing attempted yet.</p>`)}
@@ -1157,11 +1238,27 @@ function backupCard(){
 }
 
 /* ---------- actions ---------- */
-function recordAnswer(uid,pick){
-  const q=S.byUid.get(uid),p=getP(uid),ok=pick===q.answer,wasM=!!p.m;let cleared=false;
-  p.a++;p.t=Date.now();
-  if(ok){p.c++;p.l="c";p.x="";if(p.m){p.m=0;cleared=true;}}else{p.w++;p.l="w";p.m=1;p.x=pick;}
-  queueSave(q.packId);return {ok,cleared,wasM};
+function recordAnswer(uid,pick,o){
+  o=o||{};
+  const q=S.byUid.get(uid),p=getP(uid),ok=pick===q.answer,wasM=!!p.m,td=dayKey();let cleared=false,days=0;
+  p.a++;p.t=Date.now();p.cf=o.cf||"";
+  if(typeof o.tm==="number"&&o.tm>0){p.tm=Math.round(o.tm);p.ts=(p.ts||0)+p.tm;p.tn=(p.tn||0)+1;p.sl=ok&&p.tm>SLOW_S?1:0;}else p.sl=0;
+  if(ok){
+    p.c++;p.l="c";p.x="";
+    const sure=p.cf!=="g"&&p.cf!=="h";
+    p.bx=sure?Math.min(5,(p.bx||1)+1):(p.bx||1);
+    p.dd=addDays(td,BOX_DAYS[p.bx]);
+    if(p.m){
+      p.cd=p.cd||[];
+      if(sure&&!p.cd.includes(td))p.cd.push(td);
+      if(p.cd.length>=CLEAR_DAYS){p.m=0;cleared=true;p.cd=[];}
+    }
+    days=p.m?(p.cd||[]).length:CLEAR_DAYS;
+  }else{
+    p.w++;p.l="w";p.m=1;p.x=pick;p.bx=1;p.dd=addDays(td,1);p.cd=[];p.wy="";
+    if(p.cf==="s")p.cw=(p.cw||0)+1;
+  }
+  queueSave(q.packId);return {ok,cleared,wasM,days,slow:!!p.sl};
 }
 function recordSkip(uid){
   const q=S.byUid.get(uid),p=getP(uid);
@@ -1171,7 +1268,7 @@ function startQuiz(uids,o){
   S.confirmFin=false;
   if(!uids.length)return;
   o=o||{};
-  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},done:false,elapsed:0};
+  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},tm:{},t0:Date.now(),done:false,elapsed:0};
   S.tab="practice";S.mdText="";render();window.scrollTo(0,0);
 }
 function doPick(L){
@@ -1184,12 +1281,14 @@ function doPick(L){
 function doCheck(){
   const Q=S.quiz;if(!Q||Q.done||Q.mode==="exam")return;
   const uid=Q.uids[Q.i],L=Q.sel[uid],r=Q.res[uid];if(!L||(r&&!r.skipped))return;
-  const out=recordAnswer(uid,L);
-  Q.res[uid]={pick:L,ok:out.ok,cleared:out.cleared,wasM:out.wasM,skipped:false};
+  tickQ();
+  const tmS=(Q.tm[uid]||0)/1000,cf=Q.cf[uid]||"";
+  const out=recordAnswer(uid,L,{cf,tm:tmS});
+  Q.res[uid]={pick:L,ok:out.ok,cleared:out.cleared,wasM:out.wasM,days:out.days,slow:out.slow,cf,tm:Math.round(tmS),skipped:false};
   if(out.cleared)toast("Cleared from your Notebook");
   render();
 }
-function goTo(k){const Q=S.quiz;if(!Q||Q.done||k<0||k>=Q.uids.length)return;Q.i=k;render();window.scrollTo(0,0);}
+function goTo(k){const Q=S.quiz;if(!Q||Q.done||k<0||k>=Q.uids.length)return;tickQ();Q.i=k;render();window.scrollTo(0,0);}
 function doSkip(){
   const Q=S.quiz;if(!Q||Q.done)return;
   const uid=Q.uids[Q.i];
@@ -1199,10 +1298,11 @@ function doSkip(){
 }
 function finishQuiz(){
   const Q=S.quiz;if(!Q||Q.done)return;
+  tickQ();
   for(const u of Q.uids){
     if(Q.mode==="exam"){
       const pick=Q.ans[u];
-      if(pick){const o=recordAnswer(u,pick);Q.res[u]={pick,ok:o.ok,cleared:o.cleared,wasM:o.wasM,skipped:false};}
+      if(pick){const tmS=(Q.tm[u]||0)/1000,cf=Q.cf[u]||"";const o=recordAnswer(u,pick,{cf,tm:tmS});Q.res[u]={pick,ok:o.ok,cleared:o.cleared,wasM:o.wasM,days:o.days,slow:o.slow,cf,tm:Math.round(tmS),skipped:false};}
       else{recordSkip(u);Q.res[u]={skipped:true,ok:false};}
     }else if(!Q.res[u]){recordSkip(u);Q.res[u]={skipped:true,ok:false};}
   }
@@ -1254,7 +1354,7 @@ document.addEventListener("click",async e=>{
     case "smart":S.smart={subject:"",count:20,custom:15,mode:"practice",back:"practice"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "smartsub":S.smart={subject:el.dataset.s||"",count:20,custom:15,mode:"practice",back:"notebook"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "smartback":{const b=S.smart.back;S.view="home";S.tab=b;render();window.scrollTo(0,0);break;}
-    case "smartgo":{const o=S.smart,uids=smartPool(o.subject,o).slice(0,effCount(o)).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subject||"All subjects"});break;}
+    case "smartgo":{const o=S.smart,uids=interleave(smartPool(o.subject,o).slice(0,effCount(o))).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subject||"All subjects"});break;}
     case "attemptlatest":{const lp=latestPack();if(!lp)break;const uids=S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).sort((x,y)=>x.no-y.no).map(q=>q.uid);startQuiz(uids,{mode:S.newMode,kind:"New import",label:lp.title});break;}
     case "quizmarks":startQuiz(shuffle(bookmarks().map(q=>q.uid)),{mode:"practice",kind:"Bookmarks",label:"Saved questions"});break;
     case "suball":{const subs=[...new Set(S.qs.map(q=>q.subject))];if(subs.every(s=>sel.subjects.has(s))){sel.subjects=new Set();sel.topics=new Set();}else sel.subjects=new Set(subs);render();break;}
@@ -1265,6 +1365,9 @@ document.addEventListener("click",async e=>{
     case "pc":tgt().count=v==="custom"?"custom":Number(v);render();break;
     case "pm":tgt().mode=v;render();break;
     case "start":startQuiz(pickSet(),{mode:sel.mode,kind:"Quiz",label:[...sel.subjects].join(", ")||"Mixed"});break;
+    case "duego":{const list=interleave(dueList().slice(0,DUE_CAP));if(list.length)startQuiz(list.map(q=>q.uid),{mode:"practice",kind:"Due review",label:"Spaced revision"});break;}
+    case "conf":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i],r0=Q.res[u];if(Q.mode!=="exam"&&r0&&!r0.skipped)break;Q.cf[u]=Q.cf[u]===v?"":v;render();break;}
+    case "why":{const u=el.dataset.u,p=getP(u),q=S.byUid.get(u);p.wy=p.wy===v?"":v;if(q)queueSave(q.packId);if(el.closest(".nbq")){el.parentElement.querySelectorAll(".pbtn").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===p.wy)));}else render();break;}
     case "pick":doPick(v);break;
     case "skip":doSkip();break;
     case "check":doCheck();break;
