@@ -341,8 +341,6 @@ details.nbq[open] .dots{display:none}
 .delin{background:var(--bg,#0e1014);color:inherit;border:1px solid var(--rule);border-radius:10px;padding:8px 12px;font:inherit;min-width:140px}
 .delbox .btn[disabled]{opacity:.4;cursor:not-allowed}
 
-.pn.ans{background:var(--gold-soft);border-color:var(--gold);color:var(--gold)}
-.plegend i.ans{background:var(--gold)}
 .qlayout{padding-bottom:96px}
 .qbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#121419;border-top:1px solid var(--rule);padding:14px clamp(16px,8.3vw,260px);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .qbar .btn[disabled]{opacity:.45;cursor:not-allowed}
@@ -420,6 +418,13 @@ details.nbq[open] .dots{display:none}
 .chips .pbtn{flex:none}
 .gt{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:8px 12px;font-size:15px;align-items:center}
 .focus.tap{cursor:pointer}.focus.tap:hover{border-color:var(--gold-line)}
+
+.chips .pbtn{padding:8px 14px;font-size:14px;border-radius:999px}
+.chips .pbtn[aria-pressed=true]{border-color:var(--gold);background:var(--gold-soft);color:var(--gold)}
+.moveblk{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-top:6px}
+.moveform{display:flex;flex-direction:column;gap:8px;width:100%;max-width:420px}
+.moveform[hidden]{display:none}
+.moveform .delin{width:100%}
 </style>
 </head>
 <body>
@@ -718,11 +723,12 @@ const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class=
 /* ---------- view helpers ---------- */
 const SUN=`<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 const MOON=`<svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
+const themeBtn=()=>`<button class="tgl" data-act="theme" aria-label="${S.theme==='light'?'Switch to dark mode':'Switch to light mode'}" title="${S.theme==='light'?'Dark mode':'Light mode'}">${S.theme==='light'?MOON:SUN}</button>`;
 function header(){
   const open=openMistakes().length;
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
-  return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span><button class="tgl" data-act="theme" aria-label="${S.theme==='light'?'Switch to dark mode':'Switch to light mode'}" title="${S.theme==='light'?'Dark mode':'Light mode'}">${S.theme==='light'?MOON:SUN}</button></div></div>
+  return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
   <div class="spaces" role="tablist" aria-label="Question space">${[["static","Static"],["ca","Current Affairs"]].map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
   <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
 }
@@ -790,7 +796,8 @@ function viewHome(){
   <div class="grid2">
     <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
     <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>
-  </div>`;
+  </div>
+  ${testsCard()}`;
 }
 function viewWiz(){
   const sel=S.sel,subjects=[...new Set(S.qs.map(q=>q.subject))].sort();
@@ -893,11 +900,14 @@ function viewQuiz(){
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${cfRow}${verdict}${whyRow}${locked?solution(q):""}
-  </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}`;
+  </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}${S.confirmExit?exitModal(Q):""}`;
 }
 function whyChips(uid){
   const cur=(S.prog[uid]||{}).wy;
   return `<div class="cfrow"><span class="label">Why did you miss it?</span><div class="chips">${Object.keys(WHY).map(k=>`<button class="pbtn" aria-pressed="${cur===k}" data-act="why" data-v="${k}" data-u="${esc(uid)}">${WHY[k]}</button>`).join("")}</div></div>`;
+}
+function exitModal(Q){
+  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Leave this test?</h2><p class="muted">Your answers are not saved until you submit. If you leave now they are lost.</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Leave test</button></div></div></div>`;
 }
 function finishModal(Q,exam){
   const n=Q.uids.length,a=answeredCount(Q),u=n-a;
@@ -958,13 +968,42 @@ function nbQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
-  ${picked?whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span></div></details>`;
+  ${picked?whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":""}</span></div>`).join("")}</div>
   ${solution(q)}</div></details>`;
+}
+function moveBlock(q){
+  return `<div class="moveblk"><button class="btn sm" data-act="moveopen">Move to another sub-topic</button><div class="moveform" hidden><span class="label">Subject</span><input class="delin mvs" list="dl-sub" value="${esc(q.subject)}" maxlength="80" aria-label="Subject"><span class="label">Sub-topic</span><input class="delin mvt" list="dl-top" value="${esc(q.topic)}" maxlength="80" aria-label="Sub-topic"><div class="row"><button class="btn sm pri" data-act="movego" data-v="${esc(q.uid)}">Save move</button><button class="btn sm" data-act="movecancel">Cancel</button></div></div></div>`;
+}
+const stOf=q=>{const p=S.prog[q.uid];return p&&p.a?(p.l==="c"?"ok":"bad"):(p&&p.sk?"skip":"new");};
+function testQuestion(q){
+  const p=S.prog[q.uid]||{},st=stOf(q),pick=st==="ok"?q.answer:st==="bad"?(p.x||""):"";
+  const chip={ok:`<span class="chip2 ok">Correct</span>`,bad:`<span class="chip2 bad">Incorrect</span>`,skip:`<span class="chip2 skip">Skipped</span>`,"new":`<span class="chip2 skip">Not attempted</span>`}[st];
+  const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span>${chip}${st==="bad"&&pick?`<span class="chip2">You picked (${esc(pick.toLowerCase())})</span>`:""}${st==="bad"&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">\u25be</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":st==="bad"&&L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?(st==="ok"?" (correct, your answer)":" (correct answer)"):st==="bad"&&L===pick?" (your answer)":""}</span></div>`).join("")}</div>
+  ${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}</div></details>`;
+}
+function viewTest(){
+  const T=S.tr||{},pk=S.packs.find(p=>p.id===T.pid);
+  const back=`<button class="backlink" data-act="home">\u2190 Back to Practice</button>`;
+  if(!pk)return `<div class="field" style="gap:10px">${back}<h1>Test review</h1><p class="muted">This test was not found.</p></div>`;
+  const qs=S.qs.filter(q=>q.packId===pk.id).sort((a,b)=>a.no-b.no);
+  const cnt={ok:0,bad:0,skip:0,"new":0};qs.forEach(q=>cnt[stOf(q)]++);
+  const att=cnt.ok+cnt.bad,acc=att?Math.round(cnt.ok/att*100):0,f=T.f||"all",list=f==="all"?qs:qs.filter(q=>stOf(q)===f);
+  const chips=[["all","All",qs.length],["bad","Incorrect",cnt.bad],["skip","Skipped",cnt.skip],["ok","Correct",cnt.ok],["new","Not attempted",cnt["new"]]];
+  return `<div class="field" style="gap:10px">${back}<h1>${esc(pk.title)}</h1><p class="muted">${qs.length} questions \u00b7 ${att} attempted \u00b7 ${acc}% accuracy on attempted \u00b7 your latest answer to each question</p></div>
+  <div class="row sp"><div class="chips">${chips.map(([k,l,n])=>`<button class="pbtn" aria-pressed="${f===k}" data-act="trf" data-v="${k}">${l} ${n}</button>`).join("")}</div><button class="btn sm" data-act="trall">Open / close all</button></div>
+  <div class="nblist">${list.length?list.map(testQuestion).join(""):`<p class="muted">No questions in this filter.</p>`}</div>`;
+}
+function testsCard(){
+  const tests=spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0));if(!tests.length)return "";
+  const show=S.allTests?tests:tests.slice(0,4);
+  return `<section class="card"><h2>Review a test</h2><p class="muted">Open a whole test with your answers, solutions and reasons for mistakes</p><div>${show.map(p=>{const qs=S.qs.filter(q=>q.packId===p.id);let a=0,ok=0;qs.forEach(q=>{const x=S.prog[q.uid];if(x&&x.a){a++;if(x.l==="c")ok++;}});return `<div class="pack"><div><strong>${esc(p.title)}</strong><div class="muted" style="font-size:14px">${a} of ${qs.length} attempted${a?` \u00b7 ${ok} correct`:""}</div></div><button class="btn sm" data-act="testopen" data-v="${esc(p.id)}">Review</button></div>`;}).join("")}</div>${tests.length>4?`<div><button class="btn sm" data-act="alltests">${S.allTests?"Show fewer":"Show all "+tests.length}</button></div>`:""}</section>`;
 }
 function viewNotebook(){
   const back=`<button class="backlink" data-act="home">← Back to Practice</button>`;
@@ -1124,15 +1163,20 @@ function render(){
   if(S.auth==="login"){app.innerHTML=viewLogin();return;}
   let body;
   if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
-  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():viewHome();
+  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
   else if(S.tab==="marks")body=viewMarks();
   else body=viewImport();
   const keepScroll=window.scrollY;
-  app.innerHTML=header()+body;
+  const focus=S.ready&&S.tab==="practice"&&S.quiz&&!S.quiz.done;
+  app.innerHTML=(focus?`<div class="row" style="justify-content:flex-end">${themeBtn()}</div>`:header())+body+(S.ready?moveLists():"");
   window.scrollTo(0,keepScroll);
   if(S.tab==="import"){bindImport();}
+}
+function moveLists(){
+  const subs=[...new Set(S.qs.map(q=>q.subject))].sort(),tops=[...new Set(S.qs.map(q=>q.topic))].sort();
+  return `<datalist id="dl-sub">${subs.map(x=>`<option value="${esc(x)}">`).join("")}</datalist><datalist id="dl-top">${tops.map(x=>`<option value="${esc(x)}">`).join("")}</datalist>`;
 }
 function bindImport(){
   const ta=document.getElementById("imptext"),f=document.getElementById("impfile");
@@ -1265,7 +1309,7 @@ function recordSkip(uid){
   p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();queueSave(q.packId);
 }
 function startQuiz(uids,o){
-  S.confirmFin=false;
+  S.confirmFin=false;S.confirmExit=false;
   if(!uids.length)return;
   o=o||{};
   S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},tm:{},t0:Date.now(),done:false,elapsed:0};
@@ -1368,6 +1412,22 @@ document.addEventListener("click",async e=>{
     case "duego":{const list=interleave(dueList().slice(0,DUE_CAP));if(list.length)startQuiz(list.map(q=>q.uid),{mode:"practice",kind:"Due review",label:"Spaced revision"});break;}
     case "conf":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i],r0=Q.res[u];if(Q.mode!=="exam"&&r0&&!r0.skipped)break;Q.cf[u]=Q.cf[u]===v?"":v;render();break;}
     case "why":{const u=el.dataset.u,p=getP(u),q=S.byUid.get(u);p.wy=p.wy===v?"":v;if(q)queueSave(q.packId);if(el.closest(".nbq")){el.parentElement.querySelectorAll(".pbtn").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===p.wy)));}else render();break;}
+    case "testopen":S.tr={pid:v,f:"all"};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
+    case "trf":if(S.tr){S.tr.f=v;render();}break;
+    case "trall":{const ds=[...document.querySelectorAll("details.nbq")],any=ds.some(d=>!d.open);ds.forEach(d=>{d.open=any;});break;}
+    case "alltests":S.allTests=!S.allTests;render();break;
+    case "moveopen":{const b=el.closest(".moveblk");b.querySelector(".moveform").hidden=false;el.hidden=true;break;}
+    case "movecancel":{const b=el.closest(".moveblk");b.querySelector(".moveform").hidden=true;b.querySelector('[data-act="moveopen"]').hidden=false;break;}
+    case "movego":{
+      const q=S.byUid.get(v);if(!q)break;const fm=el.closest(".moveform");
+      let sj=fm.querySelector(".mvs").value.trim().replace(/\s+/g," "),tp=fm.querySelector(".mvt").value.trim().replace(/\s+/g," ");
+      if(!sj||!tp){toast("Enter both a subject and a sub-topic");break;}
+      const subs=[...new Set(S.qs.map(x=>x.subject))];sj=subs.find(x=>x.toLowerCase()===sj.toLowerCase())||sj;
+      const tps=[...new Set(S.qs.filter(x=>x.subject===sj).map(x=>x.topic))];tp=tps.find(x=>x.toLowerCase()===tp.toLowerCase())||tp;
+      if(sj===q.subject&&tp===q.topic){toast("Already there");break;}
+      const pk=S.packs.find(x=>x.id===q.packId),q0=pk&&pk.questions.find(x=>x.no===q.no);if(!q0)break;
+      const old=pk.chunks||1;q0.subject=sj;q0.topic=tp;rebuild();render();
+      await enqueue(()=>S.store.savePack(pk,old));toast("Moved to "+sj+" \u203a "+tp);break;}
     case "pick":doPick(v);break;
     case "skip":doSkip();break;
     case "check":doCheck();break;
@@ -1385,7 +1445,10 @@ document.addEventListener("click",async e=>{
     case "finishok":S.confirmFin=false;finishQuiz();break;
     case "finishno":S.confirmFin=false;render();break;
     case "bm":{const q=S.byUid.get(v);if(!q)break;const p=getP(v);p.b=p.b?0:1;queueSave(q.packId);render();break;}
-    case "exit":flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done&&Q0.mode==="exam"&&answeredCount(Q0)>0){S.confirmExit=true;render();break;}S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
+    case "exitno":S.confirmExit=false;render();break;
+    case "exitok":S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "exit_unused":S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "redo":{const Q=S.quiz;startQuiz(shuffle(Q.uids.filter(u=>!Q.res[u].ok)),{mode:Q.mode,kind:"Redo",label:Q.label});break;}
     case "nbsub":S.nb.subject=v||"";render();window.scrollTo(0,0);break;
     case "heatby":S.heatBy=v;render();break;
@@ -1443,6 +1506,7 @@ document.addEventListener("keydown",e=>{
   }
   if(!Q||Q.done||S.tab!=="practice")return;
   if(S.confirmFin){if(e.key==="Escape"){S.confirmFin=false;render();}return;}
+  if(S.confirmExit){if(e.key==="Escape"){S.confirmExit=false;render();}return;}
   const tag=(e.target&&e.target.tagName)||"";if(tag==="TEXTAREA"||tag==="INPUT"||tag==="SELECT"||e.metaKey||e.ctrlKey||e.altKey)return;
   const q=S.byUid.get(Q.uids[Q.i]),k=e.key.toUpperCase(),r=Q.res[Q.uids[Q.i]],locked=Q.mode!=="exam"&&r&&!r.skipped;
   let L=null;if(/^[A-F]$/.test(k))L=k;else if(/^[1-6]$/.test(k))L="ABCDEF"[Number(k)-1];
