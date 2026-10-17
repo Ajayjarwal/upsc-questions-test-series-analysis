@@ -428,6 +428,7 @@ details.nbq[open] .dots{display:none}
 .focuslist{display:flex;flex-direction:column;gap:10px;max-height:344px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain}
 .focuslist .focus{min-height:104px;flex:none}
 .pal .chips{gap:6px}.pal .chips .pbtn{padding:6px 11px;font-size:13px}
+.scrolllist{max-height:340px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain}
 </style>
 </head>
 <body>
@@ -865,7 +866,7 @@ function viewReview(){
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${solution(q)}
+  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
 
@@ -904,6 +905,9 @@ function viewQuiz(){
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${cfRow}${verdict}${whyRow}${locked?solution(q):""}
   </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}${S.confirmExit?exitModal(Q):""}`;
+}
+function cfShow(cf){
+  return `<div class="cfrow"><span class="label">How sure were you?</span><div class="chips">${["s","h","g"].map(k=>`<span class="chip2${cf===k?" gold":""}">${CONF[k]}</span>`).join("")}${cf?"":`<span class="hint">Not tagged during the test</span>`}</div></div>`;
 }
 function whyChips(uid){
   const cur=(S.prog[uid]||{}).wy;
@@ -971,7 +975,7 @@ function nbQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
-  ${picked?whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
+  ${picked?cfShow(p.cf)+whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
@@ -1033,13 +1037,13 @@ function viewTest(){
   const verdict={ok:`<p class="note">Correct</p>`,bad:`<p class="note bad">Wrong${p.cf==="s"?" \u00b7 you were sure":""}</p>`,skip:`<p class="note skip">Skipped</p>`,"new":`<p class="note skip">Not answered</p>`}[st];
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="home">Back to Practice</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((i+1)/list.length*100)}%"></b></div><span class="muted">${i+1} / ${list.length}</span></div>
   <div class="qmeta"><span class="tag">Q${q.no}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}
+  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}
   <div class="row">${i>0?`<button class="btn" data-act="tprev">Previous</button>`:""}${i<list.length-1?`<button class="btn pri" data-act="tnext">Next</button>`:`<button class="btn pri" data-act="home">Back to Practice</button>`}<span class="hint">Review mode \u00b7 arrow keys move between questions</span></div></section>${pal}</div>`;
 }
 function testsCard(){
   const tests=spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0));if(!tests.length)return "";
-  const show=S.allTests?tests:tests.slice(0,4);
-  return `<section class="card"><h2>Review a test</h2><p class="muted">Open a whole test with your answers, solutions and reasons for mistakes</p><div>${show.map(p=>{const qs=S.qs.filter(q=>q.packId===p.id);let a=0,ok=0;qs.forEach(q=>{const x=S.prog[q.uid];if(x&&x.a){a++;if(x.l==="c")ok++;}});return `<div class="pack"><div><strong>${esc(p.title)}</strong><div class="muted" style="font-size:14px">${a} of ${qs.length} attempted${a?` \u00b7 ${ok} correct`:""}</div></div><button class="btn sm" data-act="testopen" data-v="${esc(p.id)}">Review</button></div>`;}).join("")}</div>${tests.length>4?`<div><button class="btn sm" data-act="alltests">${S.allTests?"Show fewer":"Show all "+tests.length}</button></div>`:""}</section>`;
+  const show=tests;
+  return `<section class="card"><h2>Review a test</h2><p class="muted">Open a whole test with your answers, solutions and reasons for mistakes</p><div class="scrolllist">${show.map(p=>{const qs=S.qs.filter(q=>q.packId===p.id);let a=0,ok=0;qs.forEach(q=>{const x=S.prog[q.uid];if(x&&x.a){a++;if(x.l==="c")ok++;}});return `<div class="pack"><div><strong>${esc(p.title)}</strong><div class="muted" style="font-size:14px">${a} of ${qs.length} attempted${a?` \u00b7 ${ok} correct`:""}</div></div><button class="btn sm" data-act="testopen" data-v="${esc(p.id)}">Review</button></div>`;}).join("")}</div></section>`;
 }
 function viewNotebook(){
   const back=`<button class="backlink" data-act="home">← Back to Practice</button>`;
@@ -1178,7 +1182,7 @@ function viewImport(){
   <div class="field"><label class="label" for="imptext">Or paste JSON</label><textarea id="imptext" spellcheck="false" placeholder='{"subject":"Geography","questions":[...]}'>${esc(S.imp.text)}</textarea></div>
   <div id="imp-out" class="field">${importPreview()}</div></section>
   <section class="card"><h2>Import log</h2><p class="muted">Every test you added, newest first. Deleting a test removes all its questions and your progress on them.</p>
-  ${spacePacks().length?`<div>${spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
+  ${spacePacks().length?`<div class="scrolllist">${spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
   ${backupCard()}
   <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
