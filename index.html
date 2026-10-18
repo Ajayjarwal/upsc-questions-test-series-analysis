@@ -1275,8 +1275,22 @@ function buildBackup(){
   const progress={};for(const p of S.packs)progress[p.id]=itemsFor(p.id);
   return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions})),progress});
 }
-function saveFile(name,text){
-  try{const b=new Blob([text],{type:"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return true;}catch(e){return false;}
+function buildAnalysis(){
+  const cell=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const head=["space","test","q","subject","topic","status","attempts","wrong","skipped","right","sureness","why_missed","last_time_s","avg_time_s","slow_correct","box","due","last_seen","bookmarked","open_mistake"];
+  const rows=[head.join(",")];
+  for(const pk of S.packs){
+    const sp=String(pk.id).startsWith(CAP)?"current-affairs":"static";
+    for(const q of pk.questions){
+      const p=S.prog[pk.id+":"+q.no];if(!p||!(p.a||p.sk||p.b))continue;
+      const st=p.a?(p.l==="c"?"correct":"wrong"):p.sk?"skipped":"new";
+      rows.push([sp,pk.title,q.no,q.subject,q.topic,st,p.a||0,p.w||0,p.sk||0,p.c||0,CONF[p.cf]||"",WHY[p.wy]||"",p.tm||"",p.tn?Math.round((p.ts||0)/p.tn):"",p.sl?1:0,p.bx||"",p.a?dueDay(p):"",p.t?dayKey(p.t):"",p.b?1:0,p.m?1:0].map(cell).join(","));
+    }
+  }
+  return "# recall-desk progress export "+new Date().toISOString().slice(0,10)+" (sureness = how sure you were on the last answer; why_missed = your tag for the last wrong answer)\n"+rows.join("\n");
+}
+function saveFile(name,text,type){
+  try{const b=new Blob([text],{type:type||"application/json"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return true;}catch(e){return false;}
 }
 function parseBackup(text){
   let d;try{d=JSON.parse(text);}catch(e){return {error:"This is not valid JSON."};}
@@ -1312,6 +1326,7 @@ function backupCard(){
   <p class="muted">Save all your question sets and your progress (mistakes, bookmarks, attempts) to one file, and load it back any time, even in a new account.</p>
   <div class="row">${CONFIG.requireLogin?`<button class="btn pri" data-act="bkdl" ${S.packs.length?"":"disabled"}>Download backup</button>`:""}<button class="btn${CONFIG.requireLogin?"":" pri"}" data-act="bkcopy" ${S.packs.length?"":"disabled"}>Copy backup</button></div>
   <p class="hint">${CONFIG.requireLogin?"If your browser blocks the download, use Copy backup and paste it into a text file.":"Copy the backup and paste it into a text file. Restore reads that file back."}</p>
+  <div class="field" style="gap:8px"><span class="label">For analysis</span><p class="muted" style="font-size:14px">A small progress-only file (no question text) that you can paste or attach in a chat to get a review of your patterns.</p><div class="row">${CONFIG.requireLogin?`<button class="btn pri" data-act="andl" ${S.packs.length?"":"disabled"}>Download analysis file</button>`:""}<button class="btn${CONFIG.requireLogin?"":" pri"}" data-act="ancopy" ${S.packs.length?"":"disabled"}>Copy for analysis</button></div></div>
   <div class="field"><label class="label" for="bkfile">Restore from a backup file</label><input type="file" id="bkfile" accept=".json,application/json,.txt"></div>
   ${S.bk.error?`<p class="note bad">${esc(S.bk.error)}</p>`:""}
   ${b?`<div class="field"><p>${b.packs.length} set${b.packs.length===1?"":"s"} \u00b7 ${n} questions \u00b7 progress on ${pn} questions${b.exported?` \u00b7 saved ${esc(String(b.exported).slice(0,10))}`:""}</p><p class="hint">Sets with the same id are replaced along with their progress. Your other sets stay as they are.</p><div class="row"><button class="btn pri" data-act="bkrestore">Restore</button></div></div>`:""}</section>`;
@@ -1508,6 +1523,8 @@ document.addEventListener("click",async e=>{
     case "zoom":{let lb=document.getElementById("lb");if(!lb){lb=document.createElement("div");lb.id="lb";lb.addEventListener("click",()=>lb.classList.remove("on"));document.body.appendChild(lb);}lb.innerHTML=`<img src="${esc(v)}" alt="">`;lb.classList.add("on");break;}
     case "bkdl":{const ok=saveFile("recall-desk-backup-"+new Date().toISOString().slice(0,10)+".json",buildBackup());toast(ok?"Backup downloaded":"Download blocked here. Use Copy backup.");break;}
     case "bkcopy":try{await navigator.clipboard.writeText(buildBackup());toast("Backup copied. Paste it into a text file.");}catch(err){toast("Could not copy. Try Download backup.");}break;
+    case "andl":{const ok=saveFile("recall-desk-analysis-"+new Date().toISOString().slice(0,10)+".csv",buildAnalysis(),"text/csv");toast(ok?"Analysis file downloaded":"Download blocked here. Use Copy for analysis.");break;}
+    case "ancopy":try{await navigator.clipboard.writeText(buildAnalysis());toast("Copied. Paste it into the chat.");}catch(err){toast("Could not copy. Try Download analysis file.");}break;
     case "bkrestore":await restoreBackup();break;
     case "authmode":authVals();S.authMode=v;S.authMsg=null;render();break;
     case "authgo":await authGo();break;
