@@ -91,7 +91,17 @@ textarea{width:100%;min-height:170px;font:13px/1.45 ui-monospace,Menlo,Consolas,
 .qmeta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tag{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--gold-soft);color:var(--gold);border:1px solid var(--gold-line)}
 .tag.plain{background:transparent;color:var(--muted);border-color:var(--rule)}
-.qtext{font-size:18px;line-height:1.6;white-space:pre-line}
+.qtext{font-size:18px;line-height:1.6}
+.qt{white-space:pre-line}
+.qtbl{overflow-x:auto;margin:10px 0;border:1px solid var(--rule);border-radius:12px}
+.qtbl table{border-collapse:collapse;width:100%;font-size:16px;line-height:1.45}
+.qtbl th,.qtbl td{text-align:left;vertical-align:top;padding:9px 14px;border-top:1px solid var(--rule);border-left:1px solid var(--rule);overflow-wrap:anywhere}
+.qtbl th:first-child,.qtbl td:first-child{border-left:0}
+.qtbl tr:first-child>*{border-top:0}
+.qtbl th{background:var(--gold-soft);color:var(--gold);font-weight:600}
+.tgroups{display:flex;flex-direction:column;gap:14px}
+.tgrp{border:1px solid var(--rule);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--card2)}
+.tgrp strong{font-weight:600}
 .opts{display:flex;flex-direction:column;gap:10px}
 .opt{display:flex;gap:14px;align-items:flex-start;text-align:left;width:100%;padding:13px 16px;border:1px solid var(--rule);border-radius:16px;background:var(--card2);cursor:pointer}
 .opt:hover:not(:disabled){border-color:var(--gold-line)}
@@ -464,7 +474,7 @@ const S={
   tab:"practice", view:"home", step:1, ready:false, storage:"browser", store:null, auth:(CONFIG.supabaseUrl||CONFIG.requireLogin)?"checking":"none", authErr:"", authMode:"in", authMsg:null, authEmail:"", user:null, sb:null,
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
-  nb:{subject:undefined}, smart:{subject:"",count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
+  nb:{subject:undefined}, smart:{subject:"",subjects:new Set(),topics:new Set(),step:1,count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
   quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:"",theme:(()=>{try{return localStorage.getItem("rd_theme")==="light"?"light":"dark";}catch(e){return "dark";}})()
 };
 const app=document.getElementById("app");
@@ -680,6 +690,24 @@ function parseImport(text){
 }
 
 /* ---------- solution formatting ---------- */
+function fmtQ(text){
+  const lines=String(text).split("\n"),out=[];let buf=[],tbl=[];
+  const cells=l=>{let s=l.trim();if(s.includes("|")){s=s.replace(/^\|/,"").replace(/\|$/,"");return s.split("|").map(x=>x.trim());}if(l.includes("\t"))return l.split("\t").map(x=>x.trim());return null;};
+  const isSep=c=>c.length&&c.every(x=>/^:?-{2,}:?$/.test(x));
+  const flushT=()=>{
+    if(!tbl.length)return;
+    if(tbl.length<2){buf.push(...tbl.map(r=>r.raw));tbl=[];return;}
+    const rows=tbl.filter(r=>!isSep(r.c)),hasSep=tbl.some(r=>isSep(r.c)),n=Math.max(...rows.map(r=>r.c.length));
+    const head=hasSep||/^(list|column|sr|s\.?\s?no|pair|name|item)/i.test(rows[0].c.join(" "));
+    const tr=(r,tag)=>"<tr>"+Array.from({length:n},(_,i)=>`<${tag}>${inline(r.c[i]||"")}</${tag}>`).join("")+"</tr>";
+    if(buf.length){out.push(`<div class="qt">${esc(buf.join("\n"))}</div>`);buf=[];}
+    out.push(`<div class="qtbl"><table>${head?`<thead>${tr(rows[0],"th")}</thead><tbody>${rows.slice(1).map(r=>tr(r,"td")).join("")}</tbody>`:`<tbody>${rows.map(r=>tr(r,"td")).join("")}</tbody>`}</table></div>`);tbl=[];
+  };
+  for(const l of lines){const c=cells(l);if(c&&c.length>=2&&(c.length>=2)){tbl.push({c,raw:l});}else{flushT();buf.push(l);}}
+  flushT();
+  if(buf.length)out.push(`<div class="qt">${esc(buf.join("\n"))}</div>`);
+  return out.join("");
+}
 function inline(s){return esc(s).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");}
 function fmtSol(text){
   const raw=String(text).replace(/\t/g,"    ").split(/\n/);
@@ -751,7 +779,7 @@ const tgt=()=>S.view==="smart"?S.smart:S.sel;
 const priority=q=>{const p=S.prog[q.uid]||{};const w=p.w||0,sk=p.sk||0;return w>=2||w+sk>=3||(p.l==="w"&&p.cf==="s")?3:w===1?2:1;};
 const PRI={3:"High priority",2:"Mid priority",1:"Low priority"};
 function smartPool(sub,o){
-  return openMistakes().filter(q=>(!sub||q.subject===sub)&&monthOk(o,q)&&!((S.prog[q.uid].cd||[]).includes(dayKey()))).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
+  return openMistakes().filter(q=>(!sub||q.subject===sub)&&(!o||!o.subjects||!o.subjects.size||o.subjects.has(q.subject))&&(!o||!o.topics||!o.topics.size||o.topics.has(topicKey(q.subject,q.topic)))&&monthOk(o,q)&&!((S.prog[q.uid].cd||[]).includes(dayKey()))).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
 }
 function pool(){
   const s=S.sel,lp=latestPack();
@@ -803,6 +831,11 @@ function viewHome(){
   </div>
   ${testsCard()}`;
 }
+function topicGroups(o,g,subjects){
+  return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
+    const ks=[...g.get(sub).keys()].map(t=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=[...g.get(sub).values()].reduce((a,l)=>a+l.length,0);
+    return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="row">${[...g.get(sub)].map(([t,list])=>{const k=topicKey(sub,t);return `<button class="chip" aria-pressed="${o.topics.has(k)}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`;}).join("")}</div></div>`;}).join("");
+}
 function viewWiz(){
   const sel=S.sel,subjects=[...new Set(S.qs.map(q=>q.subject))].sort();
   const tabs=`<div class="steps"><span class="${S.step===1?"on":""}">Subjects</span><span class="${S.step===2?"on":""}">Preferences</span></div>`;
@@ -813,14 +846,14 @@ function viewWiz(){
       return `<button class="sc" data-act="subj" data-v="${esc(s)}" aria-pressed="${on}"><span class="mono-tile">${esc(mono(s))}</span><span class="meta"><span class="nm">${esc(s)}</span><span class="muted" style="font-size:14px">${n} question${n===1?"":"s"}</span></span><span class="chk">${on?ic("check"):""}</span></button>`;}).join("")}</div>
     <div class="foot"><span class="muted">${sel.subjects.size} of ${subjects.length} subject${subjects.length===1?"":"s"} selected</span><div class="row"><button class="btn" data-act="cancel">Cancel</button><button class="btn pri" data-act="next2" ${sel.subjects.size?"":"disabled"}>Next</button></div></div>`;
   }
-  const g=groupBySubject(S.qs),chips=[],allKeys=[];
-  for(const sub of subjects){if(!sel.subjects.has(sub))continue;for(const [t,list] of g.get(sub)){const k=topicKey(sub,t);allKeys.push(k);chips.push(`<button class="chip" aria-pressed="${sel.topics.has(k)}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`);}}
+  const g=groupBySubject(S.qs),allKeys=[];
+  for(const sub of subjects){if(!sel.subjects.has(sub))continue;for(const t of g.get(sub).keys())allKeys.push(topicKey(sub,t));}
   const matches=pool().length,n=Math.min(effCount(sel),matches);
   const whichOpts=[["prio","Unattempted & incorrect first"],["new","Unattempted only"],["wrong","Incorrect only"],["shuffle","Everything shuffled"]];
   if(latestPack())whichOpts.push(["latest","Latest import only"]);
   return `${tabs}<div class="field" style="gap:4px"><span class="label">Step 2 of 2</span><h2>Set your preferences</h2><p class="gold">${[...sel.subjects].map(esc).join(", ")}</p></div>
   <section class="card">
-    <div class="field"><div class="row sp"><span class="label">Sub-topics ${sel.topics.size?"":"(all)"}</span><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(allKeys))}'>${allKeys.length&&allKeys.every(k=>sel.topics.has(k))?"Clear all":"Select all"}</button></div><div class="row">${chips.join("")}</div></div>
+    <div class="field"><div class="row sp"><span class="label">Sub-topics ${sel.topics.size?"":"(all)"}</span><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(allKeys))}'>${allKeys.length&&allKeys.every(k=>sel.topics.has(k))?"Clear all":"Select all"}</button></div><p class="hint">Grouped by subject. Pick sub-topics under each one.</p><div class="tgroups">${topicGroups(sel,g,subjects)}</div></div>
     <div class="field"><span class="label">Which questions</span><div class="seg">${whichOpts.map(([k,l])=>`<button aria-pressed="${sel.which===k}" data-act="which" data-v="${k}">${l}</button>`).join("")}</div></div>
     ${prefsBlock(sel,matches)}
     ${spacePacks().length>1?`<div class="field"><label class="label" for="packsel">Question set</label><select id="packsel" data-change="pack"><option value="all">All sets</option>${spacePacks().map(p=>`<option value="${esc(p.id)}"${sel.pack===p.id?" selected":""}>${esc(p.title)}</option>`).join("")}</select></div>`:""}
@@ -828,10 +861,26 @@ function viewWiz(){
   <div class="foot"><span class="muted">${n} question${n===1?"":"s"} · ${sel.mode==="exam"?"Exam":"Practice"} mode</span><div class="row"><button class="btn" data-act="back1">Previous</button><button class="btn pri" data-act="start" ${n?"":"disabled"}>Start</button></div></div>`;
 }
 function viewSmart(){
-  const o=S.smart,avail=smartPool(o.subject,o).length,n=Math.min(effCount(o),avail);
-  return `<div class="field" style="gap:6px"><h1>Set your preferences</h1><p class="gold" style="font-weight:600">${esc(o.subject||"All subjects")}</p></div>
-  <section class="card">${prefsBlock(o,avail)}</section>
-  <div class="foot"><span class="muted">${n} question${n===1?"":"s"} · ${o.mode==="exam"?"Exam":"Practice"} mode</span><div class="row"><button class="btn" data-act="smartback">Previous</button><button class="btn pri" data-act="smartgo" ${n?"":"disabled"}>Start</button></div></div>`;
+  const o=S.smart,pool0=smartPool("",{months:new Set()}),g=groupBySubject(pool0),subjects=[...g.keys()].sort();
+  for(const s of [...o.subjects])if(!g.has(s))o.subjects.delete(s);
+  const tabs=`<div class="steps"><span class="${o.step===1?"on":""}">Subjects</span><span class="${o.step===2?"on":""}">Preferences</span></div>`;
+  if(o.step===1){
+    const allOn=subjects.length>0&&subjects.every(s=>o.subjects.has(s));
+    return `${tabs}<div class="row sp"><div class="field" style="gap:4px"><span class="label">Step 1 of 2</span><h2>Select subjects</h2><p class="muted">Only subjects with mistakes to reattempt are shown. Leave none selected to include all.</p></div><button class="btn sm" data-act="suball">${allOn?"Clear all":"Select all"}</button></div>
+    <div class="subj">${subjects.map(s=>{const on=o.subjects.has(s),n=pool0.filter(q=>q.subject===s).length;
+      return `<button class="sc" data-act="subj" data-v="${esc(s)}" aria-pressed="${on}"><span class="mono-tile">${esc(mono(s))}</span><span class="meta"><span class="nm">${esc(s)}</span><span class="muted" style="font-size:14px">${n} mistake${n===1?"":"s"}</span></span><span class="chk">${on?ic("check"):""}</span></button>`;}).join("")}</div>
+    <div class="foot"><span class="muted">${o.subjects.size?o.subjects.size+" of "+subjects.length+" subject"+(subjects.length===1?"":"s")+" selected":"All subjects"}</span><div class="row"><button class="btn" data-act="smartback">Cancel</button><button class="btn pri" data-act="next2">Next</button></div></div>`;
+  }
+  const shown=o.subjects.size?subjects.filter(s=>o.subjects.has(s)):subjects;
+  const so={...o,subjects:new Set(shown)},allKeys=[];
+  for(const s of shown)for(const t of g.get(s).keys())allKeys.push(topicKey(s,t));
+  for(const k of [...o.topics])if(!allKeys.includes(k))o.topics.delete(k);
+  const avail=smartPool("",o).length,n=Math.min(effCount(o),avail);
+  return `${tabs}<div class="field" style="gap:4px"><span class="label">Step 2 of 2</span><h2>Set your preferences</h2><p class="gold">${shown.map(esc).join(", ")||"All subjects"}</p></div>
+  <section class="card">
+    <div class="field"><div class="row sp"><span class="label">Sub-topics ${o.topics.size?"":"(all)"}</span><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(allKeys))}'>${allKeys.length&&allKeys.every(k=>o.topics.has(k))?"Clear all":"Select all"}</button></div><p class="hint">Grouped by subject. Only sub-topics with mistakes are shown.</p><div class="tgroups">${topicGroups(so,g,subjects)}</div></div>
+    ${prefsBlock(o,avail)}</section>
+  <div class="foot"><span class="muted">${n} question${n===1?"":"s"} · ${o.mode==="exam"?"Exam":"Practice"} mode</span><div class="row"><button class="btn" data-act="back1">Previous</button><button class="btn pri" data-act="smartgo" ${n?"":"disabled"}>Start</button></div></div>`;
 }
 
 /* ---------- quiz ---------- */
@@ -866,7 +915,7 @@ function viewReview(){
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${solution(q)}
+  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
 
@@ -900,7 +949,7 @@ function viewQuiz(){
   }
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="exit">Exit</button><div class="bar" aria-hidden="true"><b style="width:${Math.round(answeredCount(Q)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.i+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}
+  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${cfRow}${verdict}${whyRow}${locked?solution(q):""}
@@ -914,7 +963,7 @@ function whyChips(uid){
   return `<div class="cfrow"><span class="label">Why did you miss it?</span><div class="chips">${Object.keys(WHY).map(k=>`<button class="pbtn" aria-pressed="${cur===k}" data-act="why" data-v="${k}" data-u="${esc(uid)}">${WHY[k]}</button>`).join("")}</div></div>`;
 }
 function exitModal(Q){
-  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Leave this test?</h2><p class="muted">Your answers are not saved until you submit. If you leave now they are lost.</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Leave test</button></div></div></div>`;
+  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Are you sure you want to exit?</h2><p class="muted">${Q&&Q.mode==="exam"?"Your answers are not saved until you submit. If you leave now they are lost.":"Questions you have already checked are saved. The rest of this session will not count."}</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Yes, exit</button></div></div></div>`;
 }
 function finishModal(Q,exam){
   const n=Q.uids.length,a=answeredCount(Q),u=n-a;
@@ -974,13 +1023,13 @@ function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
   ${picked?cfShow(p.cf)+whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<p class="qtext">${esc(rest)}</p>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":""}</span></div>`).join("")}</div>
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":""}</span></div>`).join("")}</div>
   ${solution(q)}</div></details>`;
 }
 function moveBlock(q){
@@ -1037,7 +1086,7 @@ function viewTest(){
   const verdict={ok:`<p class="note">Correct</p>`,bad:`<p class="note bad">Wrong${p.cf==="s"?" \u00b7 you were sure":""}</p>`,skip:`<p class="note skip">Skipped</p>`,"new":`<p class="note skip">Not answered</p>`}[st];
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="home">Back to Practice</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((i+1)/list.length*100)}%"></b></div><span class="muted">${i+1} / ${list.length}</span></div>
   <div class="qmeta"><span class="tag">Q${q.no}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <p class="qtext">${esc(q.text)}</p>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}
+  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}
   <div class="row">${i>0?`<button class="btn" data-act="tprev">Previous</button>`:""}${i<list.length-1?`<button class="btn pri" data-act="tnext">Next</button>`:`<button class="btn pri" data-act="home">Back to Practice</button>`}<span class="hint">Review mode \u00b7 arrow keys move between questions</span></div></section>${pal}</div>`;
 }
 function testsCard(){
@@ -1141,7 +1190,7 @@ function findSimilar(r){
   return out;
 }
 function dupCard(d,i){
-  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><p class="dq">${esc(q.text)}</p><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${L===q.answer?"right":""}"><b>${L}</b> ${esc(q.options[L])}${L===q.answer?" ✓":""}</li>`).join("")}</ul></div>`;
+  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><div class="dq">${fmtQ(q.text)}</div><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${L===q.answer?"right":""}"><b>${L}</b> ${esc(q.options[L])}${L===q.answer?" ✓":""}</li>`).join("")}</ul></div>`;
   return `<div class="dup"><div class="row sp"><strong>New Q${d.newQ.no} looks similar</strong><span class="muted">${Math.round(d.score*100)}% match</span></div><div class="dcols">${side(d.old,"Already in your bank")}${side(d.newQ,"New in this file")}</div>
   <div class="seg">${[["old","Keep existing"],["new","Keep new"],["both","Keep both"]].map(([k,l])=>`<button aria-pressed="${d.choice===k}" data-act="dup" data-i="${i}" data-v="${k}">${l}</button>`).join("")}</div></div>`;
 }
@@ -1439,20 +1488,20 @@ async function applyImport(attempt){
 }
 document.addEventListener("click",async e=>{
   const el=e.target.closest("[data-act]");if(!el)return;
-  const a=el.dataset.act,v=el.dataset.v,sel=S.sel;
+  const a=el.dataset.act,v=el.dataset.v,sel=S.view==="smart"?S.smart:S.sel;
   switch(a){
     case "tab":S.tab=v;if(v!=="practice")S.view="home";if(v==="notebook"&&el.dataset.quizdone)S.nb.subject=undefined;if(v!=="practice"&&S.quiz&&S.quiz.done&&el.dataset.quizdone)S.quiz=null;S.mdText="";render();window.scrollTo(0,0);break;
     case "startwiz":S.view="wiz";S.step=1;S.quiz=null;render();window.scrollTo(0,0);break;
     case "cancel":S.view="home";sel.subjects=new Set();sel.topics=new Set();sel.months=new Set();render();break;
-    case "next2":if(sel.subjects.size){S.step=2;render();window.scrollTo(0,0);}break;
-    case "back1":S.step=1;render();break;
-    case "smart":S.smart={subject:"",count:20,custom:15,mode:"practice",back:"practice"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
-    case "smartsub":S.smart={subject:el.dataset.s||"",count:20,custom:15,mode:"practice",back:"notebook"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
+    case "next2":if(S.view==="smart"){S.smart.step=2;render();window.scrollTo(0,0);}else if(sel.subjects.size){S.step=2;render();window.scrollTo(0,0);}break;
+    case "back1":if(S.view==="smart")S.smart.step=1;else S.step=1;render();break;
+    case "smart":S.smart={subject:"",subjects:new Set(),topics:new Set(),step:1,count:20,custom:15,mode:"practice",back:"practice"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
+    case "smartsub":S.smart={subject:"",subjects:new Set(el.dataset.s?[el.dataset.s]:[]),topics:new Set(),step:el.dataset.s?2:1,count:20,custom:15,mode:"practice",back:"notebook"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "smartback":{const b=S.smart.back;S.view="home";S.tab=b;render();window.scrollTo(0,0);break;}
-    case "smartgo":{const o=S.smart,uids=interleave(smartPool(o.subject,o).slice(0,effCount(o))).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subject||"All subjects"});break;}
+    case "smartgo":{const o=S.smart,uids=interleave(smartPool("",o).slice(0,effCount(o))).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subjects.size?[...o.subjects].join(", "):"All subjects"});break;}
     case "attemptlatest":{const lp=latestPack();if(!lp)break;const uids=S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).sort((x,y)=>x.no-y.no).map(q=>q.uid);startQuiz(uids,{mode:S.newMode,kind:"New import",label:lp.title});break;}
     case "quizmarks":startQuiz(shuffle(bookmarks().map(q=>q.uid)),{mode:"practice",kind:"Bookmarks",label:"Saved questions"});break;
-    case "suball":{const subs=[...new Set(S.qs.map(q=>q.subject))];if(subs.every(s=>sel.subjects.has(s))){sel.subjects=new Set();sel.topics=new Set();}else sel.subjects=new Set(subs);render();break;}
+    case "suball":{const subs=S.view==="smart"?[...new Set(smartPool("",{months:new Set()}).map(q=>q.subject))]:[...new Set(S.qs.map(q=>q.subject))];if(subs.every(s=>sel.subjects.has(s))){sel.subjects=new Set();sel.topics=new Set();}else sel.subjects=new Set(subs);render();break;}
     case "topall":{const ks=el.dataset.ks?JSON.parse(el.dataset.ks):[];if(ks.every(k=>sel.topics.has(k)))sel.topics=new Set();else sel.topics=new Set(ks);render();break;}
     case "subj":if(sel.subjects.has(v)){sel.subjects.delete(v);for(const k of [...sel.topics])if(k.startsWith(v+"›"))sel.topics.delete(k);}else sel.subjects.add(v);render();break;
     case "topic":sel.topics.has(v)?sel.topics.delete(v):sel.topics.add(v);render();break;
@@ -1494,7 +1543,7 @@ document.addEventListener("click",async e=>{
     case "finishok":S.confirmFin=false;finishQuiz();break;
     case "finishno":S.confirmFin=false;render();break;
     case "bm":{const q=S.byUid.get(v);if(!q)break;const p=getP(v);p.b=p.b?0:1;queueSave(q.packId);render();break;}
-    case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done&&Q0.mode==="exam"&&answeredCount(Q0)>0){S.confirmExit=true;render();break;}S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
+    case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done){S.confirmExit=true;render();break;}S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
     case "exitno":S.confirmExit=false;render();break;
     case "exitok":S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "exit_unused":S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
