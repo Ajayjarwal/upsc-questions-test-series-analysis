@@ -808,13 +808,18 @@ function prefsBlock(o,avail){
   <div class="field"><span class="label">Mode</span><div class="grid2" style="gap:12px">${[["practice","Practice","See the answer and solution after each question"],["exam","Exam","Review everything after you submit"]].map(([k,t,d])=>`<button class="mode" aria-pressed="${o.mode===k}" data-act="pm" data-v="${k}"><strong>${t}</strong><span class="muted">${d}</span></button>`).join("")}</div></div>
   ${avail<eff?`<div class="info">Only ${avail} question${avail===1?"":"s"} match. We'll start with ${avail}.</div>`:""}`;
 }
+function unattemptedCard(){
+  const rows=spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(p=>{const n=S.qs.filter(q=>q.packId===p.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length;return {p,n};}).filter(r=>r.n&&r.n===r.p.questions.length);
+  if(!rows.length)return "";
+  return `<div class="card"><div class="row sp"><div><strong>Tests not attempted yet</strong><div class="muted" style="font-size:14px">${rows.length} test${rows.length===1?"":"s"} you have never started</div></div>${modeSeg()}</div><div class="${rows.length>4?"scrolllist":""}">${rows.map(r=>`<div class="pack"><div><strong>${esc(r.p.title)}</strong><div class="muted" style="font-size:14px">${r.n} question${r.n===1?"":"s"}</div></div><button class="btn pri sm" data-act="attemptpack" data-v="${esc(r.p.id)}">Attempt</button></div>`).join("")}</div></div>`;
+}
 function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
   const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length,due=dueList().length,anyAtt=S.qs.some(q=>S.prog[q.uid]&&S.prog[q.uid].a);
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
   return `<div class="field" style="gap:6px"><h1>Practice</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
   ${has?"":emptyBank()}
-  ${lp&&fresh?`<div class="newbar"><div><strong>New: ${esc(lp.title)}</strong><div class="muted" style="font-size:14px">${fresh} question${fresh===1?"":"s"} not attempted yet</div></div><div class="row">${modeSeg()}<button class="btn pri" data-act="attemptlatest">Attempt only these</button></div></div>`:""}
+  ${unattemptedCard()}
   ${has&&anyAtt?`<div class="newbar"><div><strong>Due today: ${due}</strong><div class="muted" style="font-size:14px">${due?`Revise before you forget${due>DUE_CAP?` \u00b7 today's round has the ${DUE_CAP} most overdue`:""}`:"Nothing due. Reviews are scheduled automatically after every answer."}</div></div><button class="btn pri" data-act="duego" ${due?"":"disabled"}>Start review${due?` (${Math.min(due,DUE_CAP)})`:""}</button></div>`:""}
   <div class="grid2">
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
@@ -1499,6 +1504,7 @@ document.addEventListener("click",async e=>{
     case "smartsub":S.smart={subject:"",subjects:new Set(el.dataset.s?[el.dataset.s]:[]),topics:new Set(),step:el.dataset.s?2:1,count:20,custom:15,mode:"practice",back:"notebook"};S.view="smart";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "smartback":{const b=S.smart.back;S.view="home";S.tab=b;render();window.scrollTo(0,0);break;}
     case "smartgo":{const o=S.smart,uids=interleave(smartPool("",o).slice(0,effCount(o))).map(q=>q.uid);startQuiz(uids,{mode:o.mode,kind:"Smart Quiz",label:o.subjects.size?[...o.subjects].join(", "):"All subjects"});break;}
+    case "attemptpack":{const pk=S.packs.find(x=>x.id===v);if(!pk)break;const uids=S.qs.filter(q=>q.packId===pk.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).sort((x,y)=>x.no-y.no).map(q=>q.uid);startQuiz(uids,{mode:S.newMode,kind:"New import",label:pk.title});break;}
     case "attemptlatest":{const lp=latestPack();if(!lp)break;const uids=S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).sort((x,y)=>x.no-y.no).map(q=>q.uid);startQuiz(uids,{mode:S.newMode,kind:"New import",label:lp.title});break;}
     case "quizmarks":startQuiz(shuffle(bookmarks().map(q=>q.uid)),{mode:"practice",kind:"Bookmarks",label:"Saved questions"});break;
     case "suball":{const subs=S.view==="smart"?[...new Set(smartPool("",{months:new Set()}).map(q=>q.subject))]:[...new Set(S.qs.map(q=>q.subject))];if(subs.every(s=>sel.subjects.has(s))){sel.subjects=new Set();sel.topics=new Set();}else sel.subjects=new Set(subs);render();break;}
