@@ -153,11 +153,17 @@ details.mq>summary::-webkit-details-marker{display:none}
 details.mq>summary span.q{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:pre-line;min-width:0}
 details.mq[open]>summary span.q{display:block;-webkit-line-clamp:unset}
 details.mq .body{padding:4px 14px 16px;display:flex;flex-direction:column;gap:12px}
-.mini{display:flex;flex-direction:column;gap:6px;font-size:15px}
-.mini div{display:flex;gap:10px;padding:7px 12px;border-radius:10px;border:1px solid transparent}
-.mini div.right{background:var(--good-soft);border-color:var(--good)}
-.mini div.wrong{background:var(--bad-soft);border-color:var(--bad)}
-.mini b{font-weight:600;flex:none}
+.review-options{display:flex;flex-direction:column;gap:12px}
+.review-option{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--rule);border-radius:16px;background:var(--card2);min-width:0}
+.review-letter{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--rule);color:var(--muted);font-weight:700;line-height:1;text-transform:lowercase}
+.review-text{min-width:0;overflow-wrap:anywhere;white-space:pre-line}
+.review-flag{font-size:13px;font-weight:700;text-align:right}
+.review-option.right{border:2px solid var(--good);background:var(--good-soft);padding:15px 17px}
+.review-option.wrong{border:2px solid var(--bad);background:var(--bad-soft);padding:15px 17px}
+.review-option.right .review-flag{color:var(--good)}
+.review-option.wrong .review-flag{color:var(--bad)}
+@media(max-width:480px){.review-option{grid-template-columns:30px minmax(0,1fr);gap:10px;padding:12px}.review-letter{width:30px;height:30px}.review-flag{grid-column:2;text-align:left}.review-option.right,.review-option.wrong{padding:11px}}
+
 .sk{font-size:12px;font-weight:600;color:var(--bad);border:1px solid var(--bad);border-radius:999px;padding:2px 8px}
 
 /* heat map */
@@ -616,6 +622,46 @@ function interleave(list){
   return out;
 }
 const dueList=()=>{const td=dayKey();return S.qs.filter(q=>{const d=dueDay(S.prog[q.uid]);return d&&d<=td;}).sort((a,b)=>dueDay(S.prog[a.uid]).localeCompare(dueDay(S.prog[b.uid]))||priority(b)-priority(a));};
+/* Daily revision is computed from progress in the currently selected space. */
+function dailyReason(p,today=dayKey()){
+  if(!p||(!p.a&&!p.sk)||p.dr===today||(p.t&&dayKey(p.t)===today))return null;
+  const due=dueDay(p);
+  if(due&&due<today)return {rank:0,label:"Overdue review"};
+  if(p.l==="w"&&p.cf==="s")return {rank:1,label:"Confident but wrong"};
+  if(p.m&&(p.w||0)+(p.sk||0)>=2)return {rank:2,label:"Repeated mistake"};
+  if(p.l==="c"&&(p.cf==="g"||p.cf==="h"))return {rank:3,label:p.cf==="g"?"Correct guess":"Correct with uncertainty"};
+  if(due&&due<=today)return {rank:4,label:"Due today"};
+  if(p.m)return {rank:5,label:p.a?"Mistake to revisit":"Skipped question"};
+  return null;
+}
+function dailyPlan(){
+  const today=dayKey(),done=S.qs.filter(q=>S.prog[q.uid]?.dr===today).length;
+  const candidates=S.qs.map(q=>({q,reason:dailyReason(S.prog[q.uid],today)})).filter(x=>x.reason);
+  candidates.sort((a,b)=>a.reason.rank-b.reason.rank||String(dueDay(S.prog[a.q.uid])||today).localeCompare(String(dueDay(S.prog[b.q.uid])||today))||(S.prog[a.q.uid].t||0)-(S.prog[b.q.uid].t||0)||a.q.uid.localeCompare(b.q.uid));
+  const slots=Math.max(0,DUE_CAP-done),chosen=candidates.slice(0,slots);
+  const mixed=interleave(chosen.map(x=>x.q));
+  return {done,target:Math.min(DUE_CAP,done+candidates.length),waiting:candidates.length,items:mixed.map(q=>chosen.find(x=>x.q.uid===q.uid)),later:Math.max(0,candidates.length-slots)};
+}
+function markDailyReview(uid){
+  if(S.quiz?.kind==="Daily revision"&&S.quiz.uids.includes(uid))getP(uid).dr=dayKey();
+}
+function startDailyReview(){
+  const plan=dailyPlan();if(!plan.items.length)return;
+  startQuiz(plan.items.map(x=>x.q.uid),{mode:"practice",kind:"Daily revision",label:spaceName()});
+}
+function dailyCard(){
+  const plan=dailyPlan(),n=plan.items.length;
+  const message=n?`${n} questions ready. Overdue reviews come first, then mistakes and uncertain answers. Topics are mixed.`:plan.done>=DUE_CAP?"Today's revision goal is complete. More reviews will be ready tomorrow.":plan.done?"Today's queue is complete. Return tomorrow for your next review.":"Nothing needs revision yet. Attempt some questions; reviews will appear here on a later day.";
+  return `<section class="card"><div class="row sp"><div><span class="label">${esc(spaceName())}</span><h2>Daily revision</h2></div><span class="tag plain">Up to ${DUE_CAP} a day</span></div><p>${message}</p>
+  <div class="row sp"><span class="hint">${plan.done} / ${plan.target} done today · answered or explicitly skipped</span>${plan.later?`<span class="hint">${plan.later} more waiting for another day</span>`:""}</div>
+  <div class="bar" role="progressbar" aria-label="Daily revision progress" aria-valuemin="0" aria-valuemax="${Math.max(1,plan.target)}" aria-valuenow="${Math.min(plan.done,Math.max(1,plan.target))}"><b style="width:${plan.target?Math.min(100,Math.round(plan.done/plan.target*100)):0}%"></b></div>
+  <div class="row"><button class="btn pri" data-act="dailygo" ${n?"":"disabled"}>${plan.done?"Continue":"Start"} revision${n?` (${n})`:""}</button><button class="btn" data-act="dailyopen">View queue</button></div><p class="hint">Questions practised today stay out of this queue until a later day. Completing a review does not mean the concept is mastered.</p></section>`;
+}
+function viewDaily(){
+  const plan=dailyPlan();
+  return `<div class="row sp"><h1>Daily revision queue</h1><button class="btn" data-act="dailyback">Back to Practice</button></div>${dailyCard()}
+  ${plan.items.length?`<section class="card"><h2>In this session</h2><p class="hint">No answers are revealed here. You still select one option at a time.</p>${plan.items.map(({q,reason},i)=>`<div class="pack"><div><span class="label">${i+1} · ${esc(q.subject)} · ${esc(q.topic)}</span><p>${esc(q.text)}</p><span class="tag plain">${esc(reason.label)}</span></div></div>`).join("")}</section>`:""}`;
+}
 function tickQ(){
   const Q=S.quiz;if(!Q||Q.done||!Q.t0)return;
   const now=Date.now(),uid=Q.uids[Q.i],r=uid&&Q.res[uid];
@@ -714,7 +760,7 @@ function parseImport(text){
     src=src.map(x=>String(x).trim()).filter(Boolean);
     let expl=String(r.explanation||r.exp||"").trim();
     if(src.length)expl=expl.split("\n").filter(l=>!/^\s*\*\*\s*News\s*:/i.test(l)).join("\n").trim();
-    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||"")});
+    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||meta.year||mm.year||"")});
   });
   out.sort((a,b)=>a.no-b.no);
   return {id,title,questions:out,errors,month:fileMonth};
@@ -840,6 +886,31 @@ function prefsBlock(o,avail){
   <div class="field"><span class="label">Mode</span><div class="grid2" style="gap:12px">${[["practice","Practice","See the answer and solution after each question"],["exam","Exam","Review everything after you submit"]].map(([k,t,d])=>`<button class="mode" aria-pressed="${o.mode===k}" data-act="pm" data-v="${k}"><strong>${t}</strong><span class="muted">${d}</span></button>`).join("")}</div></div>
   ${avail<eff?`<div class="info">Only ${avail} question${avail===1?"":"s"} match. We'll start with ${avail}.</div>`:""}`;
 }
+function capfYear(q){
+  const year=String(q.year||"").trim();
+  if(year)return /^(19|20)\d{2}$/.test(year)?year:"unknown";
+  const title=S.packs.find(p=>p.id===q.packId)?.title||"";
+  const years=[...new Set(title.match(/\b(?:19|20)\d{2}\b/g)||[])];
+  return years.length===1?years[0]:"unknown";
+}
+const capfYearLabel=year=>year==="unknown"?"Year not set":year;
+function capfYearQuestions(year){
+  if(S.space!=="capf")return [];
+  return S.qs.filter(q=>capfYear(q)===year).sort((a,b)=>a.no-b.no||a.packId.localeCompare(b.packId));
+}
+function attemptCapfYear(year){
+  const qs=capfYearQuestions(year);if(!qs.length)return;
+  startQuiz(qs.map(q=>q.uid),{mode:S.newMode,kind:"CAPF year PYQ",label:capfYearLabel(year)});
+}
+function reviewCapfYear(year){
+  if(!capfYearQuestions(year).length)return;
+  S.tr={year,f:"all",i:0};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);
+}
+function capfYearsCard(){
+  const years=[...new Set(S.qs.map(capfYear))].sort((a,b)=>a==="unknown"?1:b==="unknown"?-1:Number(b)-Number(a));
+  return `<section class="card"><div class="row sp"><h2>CAPF PYQs by year</h2>${modeSeg()}</div><p class="muted">Attempt the imported questions from one year, or review its answers, solutions and your progress.</p>${years.length?`<div class="scrolllist">${years.map(year=>{const qs=capfYearQuestions(year),s=stat(qs);return `<div class="pack"><div><strong>${esc(capfYearLabel(year))}</strong><div class="hint">${qs.length} question${qs.length===1?"":"s"} · ${s.att} answered · ${s.ok} correct</div></div><div class="row"><button class="btn pri sm" data-act="yearattempt" data-v="${esc(year)}" aria-label="Attempt ${esc(capfYearLabel(year))} PYQs">Attempt</button><button class="btn sm" data-act="yearreview" data-v="${esc(year)}" aria-label="Review ${esc(capfYearLabel(year))} PYQs">Review</button></div></div>`;}).join("")}</div>`:`<p class="hint">Years appear here after you import your PYQ files.</p><div><button class="btn" data-act="tab" data-v="import">Import PYQs</button></div>`}<p class="hint">Attempt includes previously answered questions too. Years come from your imported files or test titles. If missing, set the PYQ year during import.</p></section>`;
+}
+
 function unattemptedCard(){
   const rows=spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(p=>{const n=S.qs.filter(q=>q.packId===p.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length;return {p,n};}).filter(r=>r.n&&r.n===r.p.questions.length);
   if(!rows.length)return "";
@@ -847,12 +918,13 @@ function unattemptedCard(){
 }
 function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
-  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length,due=dueList().length,anyAtt=S.qs.some(q=>S.prog[q.uid]&&(S.prog[q.uid].a||S.prog[q.uid].sk));
+  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length;
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
   return `<div class="field" style="gap:6px"><h1>${S.space==="capf"?"CAPF PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
   ${has?"":emptyBank()}
-  ${unattemptedCard()}
-  ${has&&anyAtt?`<div class="newbar"><div><strong>Due today: ${due}</strong><div class="muted" style="font-size:14px">${due?`Revise before you forget${due>DUE_CAP?` \u00b7 today's round has the ${DUE_CAP} most overdue`:""}`:"Nothing due. Reviews are scheduled automatically after every answer."}</div></div><button class="btn pri" data-act="duego" ${due?"":"disabled"}>Start review${due?` (${Math.min(due,DUE_CAP)})`:""}</button></div>`:""}
+  ${S.space==="capf"?capfYearsCard():""}
+  ${has?dailyCard()+performanceCard():""}
+  ${S.space==="capf"?"":unattemptedCard()}
   <div class="grid2">
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
     <div class="card${ready?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first, topics mixed</p><p class="hint">${ready?`${ready} mistake${ready===1?"":"s"} ready to reattempt${mis>ready?` \u00b7 ${mis-ready} already done today`:""}`:mis?"All mistakes answered correctly today. They return tomorrow":"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${ready?"":"disabled"}>Start Smart Quiz</button></div>
@@ -866,7 +938,7 @@ function viewHome(){
     <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
     <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>
   </div>
-  ${testsCard()}`;
+  ${S.space==="capf"?"":testsCard()}`;
 }
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
@@ -944,15 +1016,11 @@ function reviewPalette(Q){
 }
 function viewReview(){
   const Q=S.quiz,uid=Q.uids[Q.rv],q=S.byUid.get(uid),r=Q.res[uid],pick=r.pick||"",last=Q.rv===Q.uids.length-1;
-  const opts=Object.keys(q.options).map(L=>{
-    let cls="opt",flag="";
-    if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
-    return `<button class="${cls}" disabled><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
-  }).join("");
+  const opts=reviewOptions(q,pick);
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${solution(q)}
+  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${reasoningNote(r.reason)}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
 
@@ -986,10 +1054,12 @@ function viewQuiz(){
   }
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="exit">Exit</button><div class="bar" aria-hidden="true"><b style="width:${Math.round(answeredCount(Q)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.i+1} / ${Q.uids.length}</span></div>
   <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  ${Q.kind==="Daily revision"?`<p class="hint">Daily revision · ${esc(dailyReason(S.prog[uid])?.label||"Review in progress")}</p>`:""}
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
-  ${cfRow}${verdict}${whyRow}${locked?solution(q):""}
+  ${cfRow}${!locked&&cur?`<div class="field"><label class="label" for="reasoning">Your reasoning (optional)</label><textarea id="reasoning" maxlength="2000" style="min-height:90px;font:inherit" placeholder="Why this option? Which options did you eliminate, and why?">${esc(Q.rn[uid]||"")}</textarea><p class="hint">Write a short explanation before revealing the solution. This note is not graded.</p></div>`:""}
+  ${verdict}${locked?reasoningNote(r.reason):""}${whyRow}${locked?solution(q):""}
   </section>${palette(Q)}</div><div class="qbar"><span class="muted">${left}</span><div class="row">${nav}</div></div>${S.confirmFin?finishModal(Q,exam):""}${S.confirmExit?exitModal(Q):""}`;
 }
 function cfShow(cf){
@@ -1005,7 +1075,7 @@ function exitModal(Q){
 function finishModal(Q,exam){
   const n=Q.uids.length,a=answeredCount(Q),u=n-a;
   return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="modal"><h2 id="mt">${exam?"Submit your test?":"End this session?"}</h2>
-  <p class="muted">You have answered <strong>${a}</strong> of ${n} question${n===1?"":"s"}${u?` and <strong>${u}</strong> ${u===1?"is":"are"} unanswered`:""}.${u?" Unanswered questions are marked as skipped and added to your Notebook.":""}${exam?" You cannot change your answers after submitting.":""}</p>
+  <p class="muted">You have answered <strong>${a}</strong> of ${n} question${n===1?"":"s"}${u?` and <strong>${u}</strong> ${u===1?"is":"are"} unanswered`:""}.${u?(Q.kind==="Daily revision"?" Unchecked questions stay in your daily queue for later.":" Unanswered questions are marked as skipped and added to your Notebook."):""}${exam?" You cannot change your answers after submitting.":""}</p>
   <div class="row"><button class="btn" data-act="finishno">Go back</button><button class="btn pri" data-act="finishok">${exam?"Yes, submit":"Yes, end session"}</button></div></div></div>`;
 }
 function fmtTime(ms){const s=Math.round(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
@@ -1023,7 +1093,7 @@ function viewResult(){
   const c=R.filter(r=>r.ok).length,sk=R.filter(r=>r.skipped).length,w=n-c-sk;
   const att=c+w,acc=att?Math.round(c/att*100):0,score=Math.round((c*2-w*0.66)*100)/100;
   const wasM=R.filter(r=>r.wasM&&!r.skipped).length,cl=R.filter(r=>r.cleared).length,added=w+sk;
-  const banner=wasM?`<strong>Cleared ${cl} of ${wasM} attempted</strong><span class="muted">The rest stay in your Notebook until you get them right with confidence on ${CLEAR_DAYS} different days</span>`:added?`<strong>${added} added to your Notebook</strong><span class="muted">Reattempt them any time with a Smart Quiz</span>`:`<strong>Clean sheet</strong><span class="muted">No mistakes in this session</span>`;
+  const banner=Q.kind==="Daily revision"?`<strong>${R.filter(r=>!r.deferred).length} reviewed or skipped</strong><span class="muted">Unchecked questions stay in your queue. Wrong answers and explicit skips return on a later day; correct answers follow your review schedule.</span>`:wasM?`<strong>Cleared ${cl} of ${wasM} attempted</strong><span class="muted">The rest stay in your Notebook until you get them right with confidence on ${CLEAR_DAYS} different days</span>`:added?`<strong>${added} added to your Notebook</strong><span class="muted">Reattempt them any time with a Smart Quiz</span>`:`<strong>Clean sheet</strong><span class="muted">No mistakes in this session</span>`;
   const missed=R.filter(r=>!r.ok).map(r=>r.u);
   const timed=R.filter(r=>r.tm>0),avgT=timed.length?Math.round(timed.reduce((x,r)=>x+r.tm,0)/timed.length):0;
   const slowN=R.filter(r=>r.ok&&r.slow).length,sureW=R.filter(r=>!r.skipped&&!r.ok&&r.cf==="s").length;
@@ -1040,9 +1110,38 @@ function viewResult(){
     <div class="tile2"><span class="label">Correct but slow</span><span class="v">${slowN}</span><span class="hint">Over ${SLOW_S}s each</span></div>
     <div class="tile2"><span class="label">Sure but wrong</span><span class="v r">${sureW}</span><span class="hint">Revise these first</span></div>
   </div>
+  ${performanceCard(sessionPerformance(R),true)}
   ${guessBlock(R,score)}
   <div class="banner">${banner}</div>
   <div class="row"><button class="btn pri" data-act="review">Review</button>${missed.length?`<button class="btn" data-act="redo">Redo the ${missed.length} missed</button>`:""}<button class="btn" data-act="tab" data-v="notebook" data-quizdone="1">Open Notebook</button></div>`;
+}
+
+/* ---------- attempt history and reasoning ---------- */
+function reasoningNote(text){return text?`<div class="sol"><span class="label">Your reasoning before reveal</span><p class="qt">${esc(text)}</p></div>`:"";}
+function trackAttempt(p,result){
+  const type=!p.first&&!(p.a||p.sk)?"first":"repeat";
+  const entry={pick:result.pick||"",ok:!!result.ok,skipped:!!result.skipped,cf:result.cf||"",reason:String(result.reason||"").slice(0,2000),t:Date.now()};
+  if(type==="first")p.first=entry;
+  else{p.repeat=p.repeat||{a:0,c:0,sk:0};if(entry.skipped)p.repeat.sk++;else{p.repeat.a++;if(entry.ok)p.repeat.c++;}}
+  p.rn=entry.reason;
+  return type;
+}
+function performanceStats(list=S.qs){
+  const stats={first:{a:0,c:0,sk:0},repeat:{a:0,c:0,sk:0},unknown:0};
+  for(const q of list){const p=S.prog[q.uid];if(!p)continue;
+    if(p.first){if(p.first.skipped)stats.first.sk++;else{stats.first.a++;if(p.first.ok)stats.first.c++;}}
+    else if(p.a||p.sk)stats.unknown++;
+    if(p.repeat)for(const key of ["a","c","sk"])stats.repeat[key]+=p.repeat[key]||0;
+  }
+  return stats;
+}
+function performanceCard(stats=performanceStats(),session=false){
+  return `<section class="card"><h2>${session?"This session: first attempts vs repeats":"First attempts vs repeat practice"}</h2><div class="grid2">${[["first","First attempts"],["repeat","Repeat practice"]].map(([key,label])=>{const r=stats[key];return `<div class="card flat"><h3>${label}</h3><strong class="score" style="font-size:32px">${r.a?Math.round(r.c/r.a*100)+"%":"—"}</strong><p>${r.c} correct / ${r.a} answered · ${r.sk} skipped</p></div>`;}).join("")}</div><p class="hint">Accuracy excludes skips. First means the first recorded attempt here; previous exposure elsewhere cannot be detected.${session?"":" Repeat totals track practice recorded since this feature was added."}</p>${stats.unknown?`<p class="hint">First-attempt history is unavailable for ${stats.unknown} previously practised question${stats.unknown===1?"":"s"}. Their old results have not been estimated.</p>`:""}</section>`;
+}
+function sessionPerformance(results){
+  const stats={first:{a:0,c:0,sk:0},repeat:{a:0,c:0,sk:0},unknown:0};
+  for(const r of results){if(r.deferred||!stats[r.attemptType])continue;const row=stats[r.attemptType];if(r.skipped)row.sk++;else{row.a++;if(r.ok)row.c++;}}
+  return stats;
 }
 
 /* ---------- notebook + saved ---------- */
@@ -1051,22 +1150,29 @@ function mdFor(list){
   for(const [sub,tm] of g){out+="\n## "+sub+"\n";for(const [t,qs] of tm){out+="\n### "+t+"\n";for(const q of qs){out+="- "+q.text.replace(/\n+/g," ")+" **Ans: "+acceptedAnswers(q).map(L=>L+") "+q.options[L]).join(" or ")+"**"+((q.sum||q.exp)?" - "+(q.sum||q.exp).replace(/\n+/g," "):"")+"\n";}}}
   return out;
 }
+function reviewOptions(q,pick=""){
+  return `<div class="review-options" role="list" aria-label="Answer review">${Object.keys(q.options).map(L=>{
+    const right=isAcceptedAnswer(q,L),wrong=!right&&L===pick;
+    const label=right?"Correct answer":wrong?`Your answer <span aria-hidden="true">✕</span>`:"";
+    return `<div class="review-option${right?" right":wrong?" wrong":""}" role="listitem"><span class="review-letter">${esc(L)}</span><span class="review-text">${esc(q.options[L])}</span>${label?`<span class="review-flag">${label}</span>`:""}</div>`;
+  }).join("")}</div>`;
+}
 function qCard(q,extra,pickArg,status){
   const p=S.prog[q.uid]||{},pick=pickArg!==undefined&&pickArg!==null?pickArg:(p.x||"");
   const chip=status==="ok"?`<span class="chip2 ok">Correct</span>`:status==="bad"?`<span class="chip2 bad">Incorrect</span>`:status==="skip"?`<span class="chip2 skip">Skipped</span>`:"";
-  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct)":L===pick?" (you chose)":""}</span></div>`).join("")}</div>${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
+  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}${reviewOptions(q,pick)}${reasoningNote(p.rn)}${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
 }
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
-  ${picked?cfShow(p.cf)+whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q,picked)}
+  ${picked?cfShow(p.cf)+whyChips(q.uid):""}${reasoningNote(p.rn)}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct answer)":""}</span></div>`).join("")}</div>
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q)}
   ${solution(q)}</div></details>`;
 }
 function moveBlock(q){
@@ -1098,11 +1204,11 @@ async function doMove(uid,sj,tp){
 }
 const stOf=q=>{const p=S.prog[q.uid];return p&&p.a?(p.l==="c"?"ok":"bad"):(p&&p.sk?"skip":"new");};
 function trList(){
-  const T=S.tr||{},all=S.qs.filter(q=>q.packId===T.pid).sort((a,b)=>a.no-b.no),f=T.f||"all";
+  const T=S.tr||{},all=T.year?capfYearQuestions(T.year):S.qs.filter(q=>q.packId===T.pid).sort((a,b)=>a.no-b.no),f=T.f||"all";
   return {all,list:f==="all"?all:all.filter(q=>stOf(q)===f),f};
 }
 function viewTest(){
-  const T=S.tr||{},pk=S.packs.find(p=>p.id===T.pid);
+  const T=S.tr||{},pk=T.year?(capfYearQuestions(T.year).length?{title:"CAPF PYQs · "+capfYearLabel(T.year)}:null):S.packs.find(p=>p.id===T.pid);
   if(!pk)return `<section class="card"><h2>Test not found</h2><div><button class="btn" data-act="home">Back to Practice</button></div></section>`;
   const {all,list,f}=trList();
   const cnt={ok:0,bad:0,skip:0,"new":0};all.forEach(q=>cnt[stOf(q)]++);
@@ -1111,20 +1217,16 @@ function viewTest(){
   const filt=`<div class="chips">${chips.map(([k,l,n])=>`<button class="pbtn" aria-pressed="${f===k}" data-act="trf" data-v="${k}">${l} ${n}</button>`).join("")}</div>`;
   const att=cnt.ok+cnt.bad,acc=att?Math.round(cnt.ok/att*100):0;
   const pal=`<aside class="card pal"><div><strong>Question palette \u00b7 Review</strong><div class="muted" style="font-size:13px;margin-top:4px">${esc(pk.title)}</div><div class="muted" style="font-size:13px">${att} of ${all.length} attempted \u00b7 ${acc}% accuracy</div></div>${filt}
-  <div class="pgrid">${list.map((x,k)=>{const st=stOf(x);return `<button class="pn ${st==="new"?"":st}${k===i?" cur":""}" data-act="tgoto" data-v="${k}" aria-label="Question ${x.no}" ${k===i?'aria-current="true"':""}>${x.no}</button>`;}).join("")}</div>
+  <div class="pgrid">${list.map((x,k)=>{const st=stOf(x);return `<button class="pn ${st==="new"?"":st}${k===i?" cur":""}" data-act="tgoto" data-v="${k}" aria-label="Question ${T.year?k+1:x.no}" ${k===i?'aria-current="true"':""}>${T.year?k+1:x.no}</button>`;}).join("")}</div>
   <div class="plegend"><span><i class="cur"></i>Current</span><span><i class="ok"></i>Correct</span><span><i class="bad"></i>Incorrect</span><span><i class="skip"></i>Skipped</span><span><i class="un"></i>Not attempted</span></div>
   <button class="btn pri full" data-act="home">Back to Practice</button></aside>`;
   if(!list.length)return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="home">Back to Practice</button></div><p class="muted">No questions in this filter.</p></section>${pal}</div>`;
   const q=list[i],p=S.prog[q.uid]||{},st=stOf(q),pick=st==="bad"?(p.x||""):"";
-  const opts=Object.keys(q.options).map(L=>{
-    let cls="opt",flag="";
-    if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
-    return `<button class="${cls}" disabled><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
-  }).join("");
+  const opts=reviewOptions(q,pick);
   const verdict={ok:`<p class="note">Correct</p>`,bad:`<p class="note bad">Wrong${p.cf==="s"?" \u00b7 you were sure":""}</p>`,skip:`<p class="note skip">Skipped</p>`,"new":`<p class="note skip">Not answered</p>`}[st];
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="home">Back to Practice</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((i+1)/list.length*100)}%"></b></div><span class="muted">${i+1} / ${list.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${q.no}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
-  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${solution(q)}${moveBlock(q)}
+  <div class="qmeta"><span class="tag">Q${q.no}</span>${T.year?`<span class="tag plain">${esc(S.packs.find(p=>p.id===q.packId)?.title||"")}</span>`:""}<span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${reasoningNote(p.rn)}${solution(q)}${moveBlock(q)}
   <div class="row">${i>0?`<button class="btn" data-act="tprev">Previous</button>`:""}${i<list.length-1?`<button class="btn pri" data-act="tnext">Next</button>`:`<button class="btn pri" data-act="home">Back to Practice</button>`}<span class="hint">Review mode \u00b7 arrow keys move between questions</span></div></section>${pal}</div>`;
 }
 function testsCard(){
@@ -1248,6 +1350,7 @@ function importPreview(){
     ${r.exists?`<div class="info"><strong>This file has the same set id as a test you already added.</strong> Choose what to do:<div class="seg" style="margin-top:10px">${[["new","Add as a separate test"],["replace","Replace the existing test"]].map(([k,l])=>`<button aria-pressed="${(S.imp.idMode==="replace")===(k==="replace")}" data-act="idmode" data-v="${k}">${l}</button>`).join("")}</div></div>`:""}
     <div class="field"><label class="label" for="impname">Test name (shown in the import log)</label><input id="impname" class="delin" style="width:100%" type="text" maxlength="120" value="${esc(S.imp.name||"")}" placeholder="${esc(r.title)}"></div>
     ${S.space==="ca"?`<div class="field"><label class="label" for="impmonth">Month &amp; year of these questions</label><input id="impmonth" class="delin" type="month" value="${esc(S.imp.month||curMonth())}"><p class="hint">Defaults to today. Change it if these questions belong to another month.</p></div>`:""}
+    ${S.space==="capf"?`<div class="field"><label class="label" for="impyear">PYQ year for questions missing a year (optional)</label><input id="impyear" class="delin" type="number" min="1900" max="2099" placeholder="2021" value="${esc(S.imp.year||"")}"><p class="hint">Existing question years are kept. Leave blank if the file already includes its year.</p></div>`:""}
     ${modeSeg()}
     <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} test (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
     ${exists?`<p class="hint">The existing set is replaced by this file. Progress is kept only when the question, options and correct answer are unchanged.</p>`:""}`);
@@ -1292,7 +1395,7 @@ function render(){
   let body;
   if(S.ready&&S.space==="cse")body=`<section class="card"><h1>CSE</h1><p class="muted">This space is reserved for later.</p></section>`;
   else if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
-  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
+  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
   else if(S.tab==="marks")body=viewMarks();
@@ -1366,14 +1469,14 @@ function buildBackup(){
 }
 function buildAnalysis(){
   const cell=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const head=["space","test","q","subject","topic","status","attempts","wrong","skipped","right","sureness","why_missed","last_time_s","avg_time_s","slow_correct","box","due","last_seen","bookmarked","open_mistake"];
+  const head=["space","test","q","subject","topic","status","attempts","wrong","skipped","right","sureness","why_missed","last_time_s","avg_time_s","slow_correct","box","due","last_seen","bookmarked","open_mistake","first_result","first_pick","repeat_answered","repeat_correct","repeat_skipped"];
   const rows=[head.join(",")];
   for(const pk of S.packs){
     const space=packSpace(pk.id),sp=space==="ca"?"current-affairs":space;
     for(const q of pk.questions){
       const p=S.prog[pk.id+":"+q.no];if(!p||!(p.a||p.sk||p.b))continue;
       const st=p.a?(p.l==="c"?"correct":"wrong"):p.sk?"skipped":"new";
-      rows.push([sp,pk.title,q.no,q.subject,q.topic,st,p.a||0,p.w||0,p.sk||0,p.c||0,CONF[p.cf]||"",WHY[p.wy]||"",p.tm||"",p.tn?Math.round((p.ts||0)/p.tn):"",p.sl?1:0,p.bx||"",p.a?dueDay(p):"",p.t?dayKey(p.t):"",p.b?1:0,p.m?1:0].map(cell).join(","));
+      rows.push([sp,pk.title,q.no,q.subject,q.topic,st,p.a||0,p.w||0,p.sk||0,p.c||0,CONF[p.cf]||"",WHY[p.wy]||"",p.tm||"",p.tn?Math.round((p.ts||0)/p.tn):"",p.sl?1:0,p.bx||"",p.a?dueDay(p):"",p.t?dayKey(p.t):"",p.b?1:0,p.m?1:0,p.first?(p.first.skipped?"skipped":p.first.ok?"correct":"wrong"):"unknown",p.first?.pick||"",p.repeat?.a||0,p.repeat?.c||0,p.repeat?.sk||0].map(cell).join(","));
     }
   }
   return "# recall-desk progress export "+new Date().toISOString().slice(0,10)+" (sureness = how sure you were on the last answer; why_missed = your tag for the last wrong answer)\n"+rows.join("\n");
@@ -1427,6 +1530,7 @@ function backupCard(){
 function recordAnswer(uid,pick,o){
   o=o||{};
   const q=S.byUid.get(uid),p=getP(uid),ok=isAcceptedAnswer(q,pick),wasM=!!p.m,td=dayKey();let cleared=false,days=0;
+  const attemptType=trackAttempt(p,{pick,ok,cf:o.cf,reason:o.reason});
   p.a++;p.t=Date.now();p.cf=o.cf||"";
   if(typeof o.tm==="number"&&o.tm>0){p.tm=Math.round(o.tm);p.ts=(p.ts||0)+p.tm;p.tn=(p.tn||0)+1;p.sl=ok&&p.tm>SLOW_S?1:0;}else p.sl=0;
   if(ok){
@@ -1444,17 +1548,18 @@ function recordAnswer(uid,pick,o){
     p.w++;p.l="w";p.m=1;p.x=pick;p.bx=1;p.dd=addDays(td,1);p.cd=[];p.wy="";
     if(p.cf==="s")p.cw=(p.cw||0)+1;
   }
-  queueSave(q.packId);return {ok,cleared,wasM,days,slow:!!p.sl};
+  markDailyReview(uid);queueSave(q.packId);return {ok,cleared,wasM,days,slow:!!p.sl,attemptType};
 }
 function recordSkip(uid){
   const q=S.byUid.get(uid),p=getP(uid);
-  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];queueSave(q.packId);
+  const attemptType=trackAttempt(p,{skipped:true,reason:S.quiz?.rn?.[uid]||""});
+  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];markDailyReview(uid);queueSave(q.packId);return attemptType;
 }
 function startQuiz(uids,o){
   S.confirmFin=false;S.confirmExit=false;
   if(!uids.length)return;
   o=o||{};
-  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},tm:{},t0:Date.now(),done:false,elapsed:0};
+  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},rn:{},tm:{},t0:Date.now(),done:false,elapsed:0};
   S.tab="practice";S.mdText="";render();window.scrollTo(0,0);
 }
 function doPick(L){
@@ -1469,8 +1574,8 @@ function doCheck(){
   const uid=Q.uids[Q.i],L=Q.sel[uid],r=Q.res[uid];if(!L||(r&&!r.skipped))return;
   tickQ();
   const tmS=(Q.tm[uid]||0)/1000,cf=Q.cf[uid]||"";
-  const out=recordAnswer(uid,L,{cf,tm:tmS});
-  Q.res[uid]={pick:L,ok:out.ok,cleared:out.cleared,wasM:out.wasM,days:out.days,slow:out.slow,cf,tm:Math.round(tmS),skipped:false};
+  const reason=Q.rn[uid]||"",out=recordAnswer(uid,L,{cf,tm:tmS,reason});
+  Q.res[uid]={pick:L,reason,attemptType:out.attemptType,ok:out.ok,cleared:out.cleared,wasM:out.wasM,days:out.days,slow:out.slow,cf,tm:Math.round(tmS),skipped:false};
   if(out.cleared)toast("Cleared from your Notebook");
   render();
 }
@@ -1479,7 +1584,7 @@ function doSkip(){
   const Q=S.quiz;if(!Q||Q.done)return;
   const uid=Q.uids[Q.i];
   if(Q.mode==="exam"){delete Q.ans[uid];Q.skp[uid]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else render();return;}
-  if(!Q.res[uid]){recordSkip(uid);Q.res[uid]={skipped:true,ok:false};}
+  if(!Q.res[uid]){const attemptType=recordSkip(uid);Q.res[uid]={skipped:true,ok:false,attemptType,reason:Q.rn[uid]||""};}
   if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{S.confirmFin=true;render();}
 }
 function finishQuiz(){
@@ -1488,9 +1593,10 @@ function finishQuiz(){
   for(const u of Q.uids){
     if(Q.mode==="exam"){
       const pick=Q.ans[u];
-      if(pick){const tmS=(Q.tm[u]||0)/1000,cf=Q.cf[u]||"";const o=recordAnswer(u,pick,{cf,tm:tmS});Q.res[u]={pick,ok:o.ok,cleared:o.cleared,wasM:o.wasM,days:o.days,slow:o.slow,cf,tm:Math.round(tmS),skipped:false};}
-      else{recordSkip(u);Q.res[u]={skipped:true,ok:false};}
-    }else if(!Q.res[u]){recordSkip(u);Q.res[u]={skipped:true,ok:false};}
+      if(pick){const tmS=(Q.tm[u]||0)/1000,cf=Q.cf[u]||"";const reason=Q.rn[u]||"",o=recordAnswer(u,pick,{cf,tm:tmS,reason});Q.res[u]={pick,reason,attemptType:o.attemptType,ok:o.ok,cleared:o.cleared,wasM:o.wasM,days:o.days,slow:o.slow,cf,tm:Math.round(tmS),skipped:false};}
+      else{const attemptType=recordSkip(u);Q.res[u]={skipped:true,ok:false,attemptType,reason:Q.rn[u]||""};}
+    }else if(!Q.res[u]&&Q.kind==="Daily revision"){Q.res[u]={skipped:true,ok:false,deferred:true};}
+    else if(!Q.res[u]){const attemptType=recordSkip(u);Q.res[u]={skipped:true,ok:false,attemptType,reason:Q.rn[u]||""};}
   }
   Q.done=true;Q.elapsed=Date.now()-Q.start;flushInBackground();
   const cl=Q.uids.filter(u=>Q.res[u].cleared).length;
@@ -1534,6 +1640,7 @@ async function applyImport(attempt){
   for(const d of dups){if(d.choice==="old")drop.add(d.no);else if(d.choice==="new")del.add(d.old.uid);}
   const qs=r.questions.filter(q=>!drop.has(q.no));
   if(S.space==="ca"){const mo=okMonth(S.imp.month)?S.imp.month:curMonth();qs.forEach(q=>{q.mo=mo;});}
+  if(S.space==="capf"&&S.imp.year){const year=String(S.imp.year).trim();if(!/^(19|20)\d{2}$/.test(year)){toast("Enter a valid four-digit PYQ year");return;}qs.forEach(q=>{if(!q.year)q.year=year;});}
   if(!qs.length){toast("Nothing left to add");return;}
   // Persist the replacement before removing any originals. Same-set originals
   // have already been replaced by addPack and must not delete the new questions.
@@ -1572,9 +1679,14 @@ document.addEventListener("click",async e=>{
     case "pc":tgt().count=v==="custom"?"custom":Number(v);render();break;
     case "pm":tgt().mode=v;render();break;
     case "start":startQuiz(pickSet(),{mode:sel.mode,kind:"Quiz",label:[...sel.subjects].join(", ")||"Mixed"});break;
+    case "dailyopen":S.view="daily";S.quiz=null;render();window.scrollTo(0,0);break;
+    case "dailyback":S.view="home";render();window.scrollTo(0,0);break;
+    case "dailygo":startDailyReview();break;
     case "duego":{const list=interleave(dueList().slice(0,DUE_CAP));if(list.length)startQuiz(list.map(q=>q.uid),{mode:"practice",kind:"Due review",label:"Spaced revision"});break;}
     case "conf":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i],r0=Q.res[u];if(Q.mode!=="exam"&&r0&&!r0.skipped)break;Q.cf[u]=Q.cf[u]===v?"":v;render();break;}
     case "why":{const u=el.dataset.u,p=getP(u),q=S.byUid.get(u);p.wy=p.wy===v?"":v;if(q)queueSave(q.packId);if(el.closest(".nbq")){el.parentElement.querySelectorAll(".pbtn").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===p.wy)));}else render();break;}
+    case "yearattempt":attemptCapfYear(v);break;
+    case "yearreview":reviewCapfYear(v);break;
     case "testopen":S.tr={pid:v,f:"all",i:0};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "trf":if(S.tr){S.tr.f=v;S.tr.i=0;render();window.scrollTo(0,0);}break;
     case "tgoto":if(S.tr){S.tr.i=Number(v);render();window.scrollTo(0,0);}break;
@@ -1655,7 +1767,7 @@ document.addEventListener("click",async e=>{
   }
   }catch(err){toast("Action could not finish: "+((err&&err.message)||"unknown error")+". Please try again.");}
 });
-document.addEventListener("input",e=>{if(!e.target)return;if(e.target.id==="impname")S.imp.name=e.target.value;else if(e.target.id==="impmonth")S.imp.month=e.target.value;});
+document.addEventListener("input",e=>{if(!e.target)return;if(e.target.id==="reasoning"){const Q=S.quiz;if(Q&&!Q.done&&(Q.mode==="exam"||!Q.res[Q.uids[Q.i]]||Q.res[Q.uids[Q.i]].skipped))Q.rn[Q.uids[Q.i]]=e.target.value.slice(0,2000);return;}if(e.target.id==="impname")S.imp.name=e.target.value;else if(e.target.id==="impmonth")S.imp.month=e.target.value;else if(e.target.id==="impyear")S.imp.year=e.target.value;});
 document.addEventListener("change",e=>{
   const d=e.target&&e.target.dataset&&e.target.dataset.change;
   if(d==="pack"){S.sel.pack=e.target.value;render();}

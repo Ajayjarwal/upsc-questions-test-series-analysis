@@ -6,12 +6,14 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(source);
 function app() {
+  const events={};
   const context = vm.createContext({
+    events,
     TextEncoder, URL, URLSearchParams, structuredClone,
     location: {hostname: 'localhost', search: ''},
     setTimeout: () => 0, clearTimeout() {},
     localStorage: {getItem() { return null; }},
-    document: {getElementById() { return {}; }, addEventListener() {}},
+    document: {getElementById() { return {}; }, addEventListener(type,fn) { (events[type]??=[]).push(fn); }},
     window: {scrollTo() {}}
   });
   vm.runInContext(source.slice(0, source.lastIndexOf('\nrender();')), context);
@@ -55,7 +57,7 @@ test('changed answer or option text invalidates progress', () => {
 });
 test('first skip schedules tomorrow and resets consecutive-day clearing', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.prog={'old:1':{a:0,sk:0,cd:['2020-01-01'],bx:5}};recordSkip('old:1');const p=S.prog['old:1'];return p.dd===addDays(dayKey(),1)&&dueDay(p)===p.dd&&p.cd.length===0&&p.bx===1&&viewHome().includes('Due today:')})()`), true);
+  assert.equal(run(`(()=>{S.prog={'old:1':{a:0,sk:0,cd:['2020-01-01'],bx:5}};recordSkip('old:1');const p=S.prog['old:1'];return p.dd===addDays(dayKey(),1)&&dueDay(p)===p.dd&&p.cd.length===0&&p.bx===1&&viewHome().includes('Daily revision')})()`), true);
 });
 test('legacy skipped-only questions enter due review; untouched questions do not', () => {
   const run=app();
@@ -97,4 +99,91 @@ test('exam hides alternatives until submission and scores either answer correctl
 test('backup, notebook export and reimport preserve accepted alternatives', () => {
   const run=app();
   assert.equal(run(`(()=>{S.packs=[{id:'old',questions:[{...question,answer:['A','B']}]}];rebuild();const restored=parseBackup(buildBackup());return restored.packs[0].questions[0].answer.join()==='A,B'&&mdFor(S.qs).includes('A) Yes or B) No')&&sameQuestion({...question,answer:['B','A']},{...question,answer:['A','B']})&&!sameQuestion(question,{...question,answer:['A','B']})})()`),true);
+});
+test('daily queue prioritizes overdue, confident errors, repeats and uncertain correct answers', () => {
+  const run=app();
+  assert.equal(run(`(()=>{const yesterday=new Date(Date.now()-86400000).getTime(),today=dayKey();const base={a:1,t:yesterday,dd:addDays(today,3)};S.packs=[{id:'old',questions:Array.from({length:6},(_,i)=>({...question,no:i+1}))}];rebuild();S.prog={'old:1':{...base,l:'c',dd:addDays(today,-2)},'old:2':{...base,l:'w',cf:'s',m:1},'old:3':{...base,l:'w',w:2,m:1},'old:4':{...base,l:'c',cf:'g'},'old:5':{...base,l:'c',dd:today},'old:6':{...base,l:'c',cf:'s'}};return dailyPlan().items.map(x=>x.q.no).join()==='1,2,3,4,5'&&dailyPlan().target===5})()`),true);
+});
+test('daily queue excludes fresh questions and anything practised today', () => {
+  const run=app();
+  assert.equal(run(`(()=>{const today=dayKey();return dailyReason({a:0,sk:0})===null&&dailyReason({a:1,l:'w',cf:'s',t:Date.now(),dd:today})===null&&dailyReason({a:1,l:'w',cf:'s',dr:today,t:1})===null&&dailyReason({a:1,l:'c',cf:'h',t:1,dd:addDays(today,2)}).label==='Correct with uncertainty'})()`),true);
+});
+test('daily queue caps daily work, deduplicates categories and retains overflow', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs=[{id:'old',questions:Array.from({length:40},(_,i)=>({...question,no:i+1}))}];rebuild();S.prog={};for(const q of S.qs)S.prog[q.uid]={a:1,w:3,m:1,l:'w',cf:'s',t:1};S.prog['old:1'].dr=dayKey();S.prog['old:2'].dr=dayKey();const plan=dailyPlan();return plan.done===2&&plan.target===25&&plan.items.length===23&&plan.later===15&&new Set(plan.items.map(x=>x.q.uid)).size===23})()`),true);
+});
+test('daily answers and explicit skips count once and persist with normal progress', async () => {
+  const run=app();
+  assert.equal(await run(`(async()=>{S.prog={'old:1':{a:1,c:0,w:1,sk:0,m:1,t:1,l:'w'}};startDailyReview();doPick('A');doCheck();await flush();return dailyPlan().done===1&&dailyPlan().items.length===0&&progress.get('old')['1'].dr===dayKey()})()`),true);
+});
+test('ending daily revision early leaves unchecked questions and progress untouched', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs=[{id:'old',questions:[question,{...question,no:2}]}];rebuild();S.prog={'old:1':{a:1,c:0,w:1,sk:0,m:1,t:1,l:'w'},'old:2':{a:1,c:0,w:1,sk:0,m:1,t:1,l:'w'}};startDailyReview();doPick('A');doCheck();const untouched=JSON.stringify(S.prog['old:2']);finishQuiz();return JSON.stringify(S.prog['old:2'])===untouched&&dailyPlan().items.length===1&&dailyPlan().done===1&&S.quiz.res['old:2'].deferred})()`),true);
+});
+test('daily explicit skip is processed today and becomes eligible tomorrow', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.prog={'old:1':{a:1,c:0,w:1,sk:0,m:1,t:1,l:'w'}};startDailyReview();doSkip();const p=S.prog['old:1'];return p.dr===dayKey()&&dailyPlan().done===1&&!dailyReason(p)&&!!dailyReason(p,addDays(dayKey(),1))})()`),true);
+});
+test('daily queue is isolated by space, keeps dates in backups and does not reveal keys', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs=[{id:'old',questions:[{...question,answer:['A','B']}]},{id:'capf::old',questions:[question]}];rebuild();S.prog={'old:1':{a:1,m:1,l:'w',t:1,dr:dayKey()},'capf::old:1':{a:1,m:1,l:'w',t:1}};S.space='capf';rebuild();const plan=dailyPlan();const preview=viewDaily();return plan.done===0&&plan.items.length===1&&plan.items[0].q.packId==='capf::old'&&!preview.includes('Answer key accepts')&&!preview.includes('Solution')&&parseBackup(buildBackup()).progress.old['1'].dr===dayKey()})()`),true);
+});
+test('reasoning survives navigation and grading and cannot be edited after reveal', async () => {
+  const run=app();
+  assert.equal(await run(`(async()=>{S.packs[0].questions.push({...question,no:2});rebuild();startQuiz(['old:1','old:2'],{mode:'practice'});doPick('A');events.input.forEach(fn=>fn({target:{id:'reasoning',value:'I ruled out B because <script>alert(1)</script>'}}));goTo(1);goTo(0);const before=viewQuiz();doCheck();events.input.forEach(fn=>fn({target:{id:'reasoning',value:'Changed after reveal'}}));await flush();const p=S.prog['old:1'];return before.includes('I ruled out B')&&p.rn.includes('<script>')&&p.first.reason===p.rn&&S.quiz.rn['old:1']===p.rn&&viewQuiz().includes('&lt;script&gt;')&&!viewQuiz().includes('<script>')&&progress.get('old')['1'].rn===p.rn})()`),true);
+});
+test('reasoning is optional and exam notes are saved only on submission', () => {
+  const run=app();
+  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'exam'});doPick('A');S.quiz.rn['old:1']='An explanation';const before=!S.prog['old:1']&&!viewQuiz().includes('Your reasoning before reveal');finishQuiz();S.quiz.rv=0;return before&&S.prog['old:1'].rn==='An explanation'&&viewReview().includes('An explanation')})()`),true);
+});
+test('first outcome stays unchanged while repeat results accumulate separately', () => {
+  const run=app();
+  assert.equal(run(`(()=>{const first=recordAnswer('old:1','B',{reason:'First thought'});const again=recordAnswer('old:1','A',{reason:'Revised thought'});recordAnswer('old:1','B');const p=S.prog['old:1'],stats=performanceStats();return first.attemptType==='first'&&again.attemptType==='repeat'&&!p.first.ok&&p.first.reason==='First thought'&&stats.first.a===1&&stats.first.c===0&&stats.repeat.a===2&&stats.repeat.c===1})()`),true);
+});
+test('legacy attempts remain unknown and their new repeats are tracked', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.prog={'old:1':{a:5,c:4,w:1,sk:0}};const out=recordAnswer('old:1','A');const stats=performanceStats();return out.attemptType==='repeat'&&!S.prog['old:1'].first&&stats.unknown===1&&stats.first.a===0&&stats.repeat.a===1&&stats.repeat.c===1})()`),true);
+});
+test('first skips remain distinct from later answers and deferred daily questions are excluded', () => {
+  const run=app();
+  assert.equal(run(`(()=>{recordSkip('old:1');recordAnswer('old:1','A');const stats=performanceStats();const summary=sessionPerformance([{attemptType:'first',skipped:true},{attemptType:'repeat',ok:true},{deferred:true,skipped:true}]);return stats.first.sk===1&&stats.first.a===0&&stats.repeat.a===1&&stats.repeat.c===1&&summary.first.sk===1&&summary.repeat.a===1})()`),true);
+});
+test('session statistics classify mixed first and repeat answers', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();S.prog['old:2']={a:1,c:0,w:1,sk:0};startQuiz(['old:1','old:2'],{mode:'exam'});doPick('A');goTo(1);doPick('B');finishQuiz();const stats=sessionPerformance(Object.values(S.quiz.res));return stats.first.a===1&&stats.first.c===1&&stats.repeat.a===1&&stats.repeat.c===0&&viewResult().includes('This session: first attempts vs repeats')})()`),true);
+});
+test('first and repeat history and reasoning round-trip through backup and stay isolated by space', () => {
+  const run=app();
+  assert.equal(run(`(()=>{recordAnswer('old:1','B',{reason:'My reasoning'});recordAnswer('old:1','A');const b=parseBackup(buildBackup());S.packs.push({id:'capf::other',questions:[question]});S.space='capf';rebuild();return b.progress.old['1'].first.reason==='My reasoning'&&b.progress.old['1'].repeat.a===1&&performanceStats().first.a===0&&performanceStats().repeat.a===0&&buildAnalysis().includes('first_result')})()`),true);
+});
+function yearFixture(run) {
+  run(`S.space='capf';S.packs=[{id:'capf::a',title:'Paper part A',questions:[{...question,year:'2021'},{...question,no:2,year:'2020'}]},{id:'capf::b',title:'Paper part B',questions:[{...question,year:'2021'}]},{id:'static-paper',title:'Other',questions:[{...question,year:'2021'}]}];rebuild();S.prog={'capf::a:1':{a:1,c:1,l:'c'},'capf::b:1':{a:1,w:1,l:'w',x:'B'}};`);
+}
+test('CAPF year attempts include only that year across files, including answered questions', () => {
+  const run=app();yearFixture(run);
+  assert.equal(run(`(()=>{S.newMode='exam';attemptCapfYear('2021');return S.quiz.uids.length===2&&S.quiz.uids.includes('capf::a:1')&&S.quiz.uids.includes('capf::b:1')&&S.quiz.mode==='exam'&&S.quiz.label==='2021'})()`),true);
+});
+test('CAPF year review filters and navigation work across source files', () => {
+  const run=app();yearFixture(run);
+  assert.equal(run(`(()=>{reviewCapfYear('2021');const all=trList();const html=viewTest();S.tr.f='bad';const wrong=trList();return all.list.length===2&&html.includes('CAPF PYQs · 2021')&&html.includes('Paper part A')&&wrong.list.length===1&&wrong.list[0].uid==='capf::b:1'&&viewTest().includes('Wrong')})()`),true);
+});
+test('year metadata takes precedence over a unique title year; ambiguous and absent years stay unassigned', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs=[{id:'x',title:'CAPF 2020'},{id:'y',title:'CAPF 2020–2021'},{id:'z',title:'CAPF PYQs'}];return capfYear({packId:'x',year:'2021'})==='2021'&&capfYear({packId:'x'})==='2020'&&capfYear({packId:'y'})==='unknown'&&capfYear({packId:'z'})==='unknown'})()`),true);
+});
+test('CAPF replaces the old test sections while Static keeps them', () => {
+  const run=app();yearFixture(run);
+  assert.equal(run(`(()=>{const capf=viewHome();S.space='static';rebuild();const original=viewHome();return capf.includes('CAPF PYQs by year')&&!capf.includes('Tests not attempted yet')&&!capf.includes('<h2>Review a test</h2>')&&capf.indexOf('data-v="2021"')<capf.indexOf('data-v="2020"')&&original.includes('Tests not attempted yet')&&original.includes('<h2>Review a test</h2>')&&!original.includes('CAPF PYQs by year')})()`),true);
+});
+test('import year fills missing metadata without overwriting explicit years', async () => {
+  const run=app();
+  assert.equal(await run(`(async()=>{S.space='capf';S.imp={year:'2021',parsed:{id:'capf::new',title:'CAPF',questions:[{...question},{...question,no:2,year:'2020'}]},dups:[]};await applyImport(false);const q=disk.get('capf::new').questions;return q[0].year==='2021'&&q[1].year==='2020'})()`),true);
+});
+test('year attempts are unavailable outside CAPF and missing year groups remain usable', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs=[{id:'capf::new',title:'CAPF',questions:[question]}];S.space='capf';rebuild();attemptCapfYear('unknown');const works=S.quiz.uids.length===1&&S.quiz.label==='Year not set';S.quiz=null;S.space='static';rebuild();attemptCapfYear('2021');return works&&S.quiz===null})()`),true);
+});
+test('paper and top-level year import metadata are retained', () => {
+  const run=app();
+  assert.equal(run(`(()=>{const q={question:'Example',options:{A:'One',B:'Two'},answer:'A'};return parseImport(JSON.stringify({subject:'CAPF',paper:{year:2021},questions:[q]})).questions[0].year==='2021'&&parseImport(JSON.stringify({subject:'CAPF',year:2020,questions:[q]})).questions[0].year==='2020'})()`),true);
 });
