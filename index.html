@@ -567,6 +567,7 @@ function scopedPackId(id,space=S.space){const prefix=SPACES[space].prefix;return
 function inSpace(id){return packSpace(id)===S.space;}
 function spacePacks(){return S.packs.filter(p=>inSpace(p.id));}
 function spaceName(){return SPACES[S.space].label;}
+const isExamSpace=()=>S.space==="capf"||S.space==="cse";
 const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const curMonth=()=>mKey(Date.now());
 function mKey(ts){const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
@@ -840,11 +841,11 @@ function header(){
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
   return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
   <div class="spaces" role="tablist" aria-label="Question space">${Object.entries(SPACES).map(([k,space])=>[k,space.label]).map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
-  ${S.space==="cse"?"":`<nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`}`;
+  <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
 }
 function emptyBank(){
-  return `<section class="card"><h2>${S.space==="capf"?"Your CAPF PYQ bank is empty":"Your question bank is empty"}</h2>
-  <p class="muted">${S.space==="capf"?"Import your CAPF PYQ JSON files to begin. Subjects and sub-topics are created from each file.":"Import a question set to begin. Each file creates its subject and sub-topic lists on its own."}</p>
+  return `<section class="card"><h2>${isExamSpace()?`Your ${spaceName()} PYQ bank is empty`:"Your question bank is empty"}</h2>
+  <p class="muted">${isExamSpace()?`Import your ${spaceName()} PYQ JSON files to begin. Subjects and sub-topics are created from each file.`:"Import a question set to begin. Each file creates its subject and sub-topic lists on its own."}</p>
   <div class="row"><button class="btn pri" data-act="tab" data-v="import">Import questions</button></div></section>`;
 }
 
@@ -886,29 +887,29 @@ function prefsBlock(o,avail){
   <div class="field"><span class="label">Mode</span><div class="grid2" style="gap:12px">${[["practice","Practice","See the answer and solution after each question"],["exam","Exam","Review everything after you submit"]].map(([k,t,d])=>`<button class="mode" aria-pressed="${o.mode===k}" data-act="pm" data-v="${k}"><strong>${t}</strong><span class="muted">${d}</span></button>`).join("")}</div></div>
   ${avail<eff?`<div class="info">Only ${avail} question${avail===1?"":"s"} match. We'll start with ${avail}.</div>`:""}`;
 }
-function capfYear(q){
+function pyqYear(q){
   const year=String(q.year||"").trim();
   if(year)return /^(19|20)\d{2}$/.test(year)?year:"unknown";
   const title=S.packs.find(p=>p.id===q.packId)?.title||"";
   const years=[...new Set(title.match(/\b(?:19|20)\d{2}\b/g)||[])];
   return years.length===1?years[0]:"unknown";
 }
-const capfYearLabel=year=>year==="unknown"?"Year not set":year;
-function capfYearQuestions(year){
-  if(S.space!=="capf")return [];
-  return S.qs.filter(q=>capfYear(q)===year).sort((a,b)=>a.no-b.no||a.packId.localeCompare(b.packId));
+const pyqYearLabel=year=>year==="unknown"?"Year not set":year;
+function pyqYearQuestions(year){
+  if(!isExamSpace())return [];
+  return S.qs.filter(q=>pyqYear(q)===year).sort((a,b)=>a.no-b.no||a.packId.localeCompare(b.packId));
 }
-function attemptCapfYear(year){
-  const qs=capfYearQuestions(year);if(!qs.length)return;
-  startQuiz(qs.map(q=>q.uid),{mode:S.newMode,kind:"CAPF year PYQ",label:capfYearLabel(year)});
+function attemptPyqYear(year){
+  const qs=pyqYearQuestions(year);if(!qs.length)return;
+  startQuiz(qs.map(q=>q.uid),{mode:S.newMode,kind:spaceName()+" year PYQ",label:pyqYearLabel(year)});
 }
-function reviewCapfYear(year){
-  if(!capfYearQuestions(year).length)return;
+function reviewPyqYear(year){
+  if(!pyqYearQuestions(year).length)return;
   S.tr={year,f:"all",i:0};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);
 }
-function capfYearsCard(){
-  const years=[...new Set(S.qs.map(capfYear))].sort((a,b)=>a==="unknown"?1:b==="unknown"?-1:Number(b)-Number(a));
-  return `<section class="card"><div class="row sp"><h2>CAPF PYQs by year</h2>${modeSeg()}</div><p class="muted">Attempt the imported questions from one year, or review its answers, solutions and your progress.</p>${years.length?`<div class="scrolllist">${years.map(year=>{const qs=capfYearQuestions(year),s=stat(qs);return `<div class="pack"><div><strong>${esc(capfYearLabel(year))}</strong><div class="hint">${qs.length} question${qs.length===1?"":"s"} · ${s.att} answered · ${s.ok} correct</div></div><div class="row"><button class="btn pri sm" data-act="yearattempt" data-v="${esc(year)}" aria-label="Attempt ${esc(capfYearLabel(year))} PYQs">Attempt</button><button class="btn sm" data-act="yearreview" data-v="${esc(year)}" aria-label="Review ${esc(capfYearLabel(year))} PYQs">Review</button></div></div>`;}).join("")}</div>`:`<p class="hint">Years appear here after you import your PYQ files.</p><div><button class="btn" data-act="tab" data-v="import">Import PYQs</button></div>`}<p class="hint">Attempt includes previously answered questions too. Years come from your imported files or test titles. If missing, set the PYQ year during import.</p></section>`;
+function pyqYearsCard(){
+  const years=[...new Set(S.qs.map(pyqYear))].sort((a,b)=>a==="unknown"?1:b==="unknown"?-1:Number(b)-Number(a));
+  return `<section class="card"><div class="row sp"><h2>${spaceName()} PYQs by year</h2>${modeSeg()}</div><p class="muted">Attempt the imported questions from one year, or review its answers, solutions and your progress.</p>${years.length?`<div class="scrolllist">${years.map(year=>{const qs=pyqYearQuestions(year),s=stat(qs);return `<div class="pack"><div><strong>${esc(pyqYearLabel(year))}</strong><div class="hint">${qs.length} question${qs.length===1?"":"s"} · ${s.att} answered · ${s.ok} correct</div></div><div class="row"><button class="btn pri sm" data-act="yearattempt" data-v="${esc(year)}" aria-label="Attempt ${esc(pyqYearLabel(year))} PYQs">Attempt</button><button class="btn sm" data-act="yearreview" data-v="${esc(year)}" aria-label="Review ${esc(pyqYearLabel(year))} PYQs">Review</button></div></div>`;}).join("")}</div>`:`<p class="hint">Years appear here after you import your PYQ files.</p><div><button class="btn" data-act="tab" data-v="import">Import PYQs</button></div>`}<p class="hint">Attempt includes previously answered questions too. Years come from your imported files or test titles. If missing, set the PYQ year during import.</p></section>`;
 }
 
 function unattemptedCard(){
@@ -920,11 +921,10 @@ function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
   const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length;
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
-  return `<div class="field" style="gap:6px"><h1>${S.space==="capf"?"CAPF PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
+  return `<div class="field" style="gap:6px"><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
   ${has?"":emptyBank()}
-  ${S.space==="capf"?capfYearsCard():""}
   ${has?dailyCard()+performanceCard():""}
-  ${S.space==="capf"?"":unattemptedCard()}
+  ${isExamSpace()?"":unattemptedCard()}
   <div class="grid2">
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
     <div class="card${ready?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first, topics mixed</p><p class="hint">${ready?`${ready} mistake${ready===1?"":"s"} ready to reattempt${mis>ready?` \u00b7 ${mis-ready} already done today`:""}`:mis?"All mistakes answered correctly today. They return tomorrow":"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${ready?"":"disabled"}>Start Smart Quiz</button></div>
@@ -938,7 +938,7 @@ function viewHome(){
     <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
     <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>
   </div>
-  ${S.space==="capf"?"":testsCard()}`;
+  ${isExamSpace()?pyqYearsCard():testsCard()}`;
 }
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
@@ -1204,11 +1204,11 @@ async function doMove(uid,sj,tp){
 }
 const stOf=q=>{const p=S.prog[q.uid];return p&&p.a?(p.l==="c"?"ok":"bad"):(p&&p.sk?"skip":"new");};
 function trList(){
-  const T=S.tr||{},all=T.year?capfYearQuestions(T.year):S.qs.filter(q=>q.packId===T.pid).sort((a,b)=>a.no-b.no),f=T.f||"all";
+  const T=S.tr||{},all=T.year?pyqYearQuestions(T.year):S.qs.filter(q=>q.packId===T.pid).sort((a,b)=>a.no-b.no),f=T.f||"all";
   return {all,list:f==="all"?all:all.filter(q=>stOf(q)===f),f};
 }
 function viewTest(){
-  const T=S.tr||{},pk=T.year?(capfYearQuestions(T.year).length?{title:"CAPF PYQs · "+capfYearLabel(T.year)}:null):S.packs.find(p=>p.id===T.pid);
+  const T=S.tr||{},pk=T.year?(pyqYearQuestions(T.year).length?{title:spaceName()+" PYQs · "+pyqYearLabel(T.year)}:null):S.packs.find(p=>p.id===T.pid);
   if(!pk)return `<section class="card"><h2>Test not found</h2><div><button class="btn" data-act="home">Back to Practice</button></div></section>`;
   const {all,list,f}=trList();
   const cnt={ok:0,bad:0,skip:0,"new":0};all.forEach(q=>cnt[stOf(q)]++);
@@ -1350,7 +1350,7 @@ function importPreview(){
     ${r.exists?`<div class="info"><strong>This file has the same set id as a test you already added.</strong> Choose what to do:<div class="seg" style="margin-top:10px">${[["new","Add as a separate test"],["replace","Replace the existing test"]].map(([k,l])=>`<button aria-pressed="${(S.imp.idMode==="replace")===(k==="replace")}" data-act="idmode" data-v="${k}">${l}</button>`).join("")}</div></div>`:""}
     <div class="field"><label class="label" for="impname">Test name (shown in the import log)</label><input id="impname" class="delin" style="width:100%" type="text" maxlength="120" value="${esc(S.imp.name||"")}" placeholder="${esc(r.title)}"></div>
     ${S.space==="ca"?`<div class="field"><label class="label" for="impmonth">Month &amp; year of these questions</label><input id="impmonth" class="delin" type="month" value="${esc(S.imp.month||curMonth())}"><p class="hint">Defaults to today. Change it if these questions belong to another month.</p></div>`:""}
-    ${S.space==="capf"?`<div class="field"><label class="label" for="impyear">PYQ year for questions missing a year (optional)</label><input id="impyear" class="delin" type="number" min="1900" max="2099" placeholder="2021" value="${esc(S.imp.year||"")}"><p class="hint">Existing question years are kept. Leave blank if the file already includes its year.</p></div>`:""}
+    ${isExamSpace()?`<div class="field"><label class="label" for="impyear">PYQ year for questions missing a year (optional)</label><input id="impyear" class="delin" type="number" min="1900" max="2099" placeholder="2021" value="${esc(S.imp.year||"")}"><p class="hint">Existing question years are kept. Leave blank if the file already includes its year.</p></div>`:""}
     ${modeSeg()}
     <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} test (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
     ${exists?`<p class="hint">The existing set is replaced by this file. Progress is kept only when the question, options and correct answer are unchanged.</p>`:""}`);
@@ -1393,8 +1393,7 @@ function render(){
   if(S.auth==="login"){app.innerHTML=viewLogin();return;}
   if(S.bankError){app.innerHTML=`<section class="card"><h2>Could not open your question bank</h2><p class="muted">${esc(S.bankError)}</p><p>Your question bank is unavailable until loading succeeds. Please retry.</p><div><button class="btn pri" data-act="retrybank">Retry</button></div></section>`;return;}
   let body;
-  if(S.ready&&S.space==="cse")body=`<section class="card"><h1>CSE</h1><p class="muted">This space is reserved for later.</p></section>`;
-  else if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
+  if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
   else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
@@ -1640,7 +1639,7 @@ async function applyImport(attempt){
   for(const d of dups){if(d.choice==="old")drop.add(d.no);else if(d.choice==="new")del.add(d.old.uid);}
   const qs=r.questions.filter(q=>!drop.has(q.no));
   if(S.space==="ca"){const mo=okMonth(S.imp.month)?S.imp.month:curMonth();qs.forEach(q=>{q.mo=mo;});}
-  if(S.space==="capf"&&S.imp.year){const year=String(S.imp.year).trim();if(!/^(19|20)\d{2}$/.test(year)){toast("Enter a valid four-digit PYQ year");return;}qs.forEach(q=>{if(!q.year)q.year=year;});}
+  if(isExamSpace()&&S.imp.year){const year=String(S.imp.year).trim();if(!/^(19|20)\d{2}$/.test(year)){toast("Enter a valid four-digit PYQ year");return;}qs.forEach(q=>{if(!q.year)q.year=year;});}
   if(!qs.length){toast("Nothing left to add");return;}
   // Persist the replacement before removing any originals. Same-set originals
   // have already been replaced by addPack and must not delete the new questions.
@@ -1685,8 +1684,8 @@ document.addEventListener("click",async e=>{
     case "duego":{const list=interleave(dueList().slice(0,DUE_CAP));if(list.length)startQuiz(list.map(q=>q.uid),{mode:"practice",kind:"Due review",label:"Spaced revision"});break;}
     case "conf":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i],r0=Q.res[u];if(Q.mode!=="exam"&&r0&&!r0.skipped)break;Q.cf[u]=Q.cf[u]===v?"":v;render();break;}
     case "why":{const u=el.dataset.u,p=getP(u),q=S.byUid.get(u);p.wy=p.wy===v?"":v;if(q)queueSave(q.packId);if(el.closest(".nbq")){el.parentElement.querySelectorAll(".pbtn").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===p.wy)));}else render();break;}
-    case "yearattempt":attemptCapfYear(v);break;
-    case "yearreview":reviewCapfYear(v);break;
+    case "yearattempt":attemptPyqYear(v);break;
+    case "yearreview":reviewPyqYear(v);break;
     case "testopen":S.tr={pid:v,f:"all",i:0};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);break;
     case "trf":if(S.tr){S.tr.f=v;S.tr.i=0;render();window.scrollTo(0,0);}break;
     case "tgoto":if(S.tr){S.tr.i=Number(v);render();window.scrollTo(0,0);}break;

@@ -161,15 +161,15 @@ function yearFixture(run) {
 }
 test('CAPF year attempts include only that year across files, including answered questions', () => {
   const run=app();yearFixture(run);
-  assert.equal(run(`(()=>{S.newMode='exam';attemptCapfYear('2021');return S.quiz.uids.length===2&&S.quiz.uids.includes('capf::a:1')&&S.quiz.uids.includes('capf::b:1')&&S.quiz.mode==='exam'&&S.quiz.label==='2021'})()`),true);
+  assert.equal(run(`(()=>{S.newMode='exam';attemptPyqYear('2021');return S.quiz.uids.length===2&&S.quiz.uids.includes('capf::a:1')&&S.quiz.uids.includes('capf::b:1')&&S.quiz.mode==='exam'&&S.quiz.label==='2021'})()`),true);
 });
 test('CAPF year review filters and navigation work across source files', () => {
   const run=app();yearFixture(run);
-  assert.equal(run(`(()=>{reviewCapfYear('2021');const all=trList();const html=viewTest();S.tr.f='bad';const wrong=trList();return all.list.length===2&&html.includes('CAPF PYQs · 2021')&&html.includes('Paper part A')&&wrong.list.length===1&&wrong.list[0].uid==='capf::b:1'&&viewTest().includes('Wrong')})()`),true);
+  assert.equal(run(`(()=>{reviewPyqYear('2021');const all=trList();const html=viewTest();S.tr.f='bad';const wrong=trList();return all.list.length===2&&html.includes('CAPF PYQs · 2021')&&html.includes('Paper part A')&&wrong.list.length===1&&wrong.list[0].uid==='capf::b:1'&&viewTest().includes('Wrong')})()`),true);
 });
 test('year metadata takes precedence over a unique title year; ambiguous and absent years stay unassigned', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs=[{id:'x',title:'CAPF 2020'},{id:'y',title:'CAPF 2020–2021'},{id:'z',title:'CAPF PYQs'}];return capfYear({packId:'x',year:'2021'})==='2021'&&capfYear({packId:'x'})==='2020'&&capfYear({packId:'y'})==='unknown'&&capfYear({packId:'z'})==='unknown'})()`),true);
+  assert.equal(run(`(()=>{S.packs=[{id:'x',title:'CAPF 2020'},{id:'y',title:'CAPF 2020–2021'},{id:'z',title:'CAPF PYQs'}];return pyqYear({packId:'x',year:'2021'})==='2021'&&pyqYear({packId:'x'})==='2020'&&pyqYear({packId:'y'})==='unknown'&&pyqYear({packId:'z'})==='unknown'})()`),true);
 });
 test('CAPF replaces the old test sections while Static keeps them', () => {
   const run=app();yearFixture(run);
@@ -179,11 +179,23 @@ test('import year fills missing metadata without overwriting explicit years', as
   const run=app();
   assert.equal(await run(`(async()=>{S.space='capf';S.imp={year:'2021',parsed:{id:'capf::new',title:'CAPF',questions:[{...question},{...question,no:2,year:'2020'}]},dups:[]};await applyImport(false);const q=disk.get('capf::new').questions;return q[0].year==='2021'&&q[1].year==='2020'})()`),true);
 });
-test('year attempts are unavailable outside CAPF and missing year groups remain usable', () => {
+test('year attempts are unavailable outside exam spaces and missing year groups remain usable', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs=[{id:'capf::new',title:'CAPF',questions:[question]}];S.space='capf';rebuild();attemptCapfYear('unknown');const works=S.quiz.uids.length===1&&S.quiz.label==='Year not set';S.quiz=null;S.space='static';rebuild();attemptCapfYear('2021');return works&&S.quiz===null})()`),true);
+  assert.equal(run(`(()=>{S.packs=[{id:'capf::new',title:'CAPF',questions:[question]}];S.space='capf';rebuild();attemptPyqYear('unknown');const works=S.quiz.uids.length===1&&S.quiz.label==='Year not set';S.quiz=null;S.space='static';rebuild();attemptPyqYear('2021');return works&&S.quiz===null})()`),true);
 });
 test('paper and top-level year import metadata are retained', () => {
   const run=app();
   assert.equal(run(`(()=>{const q={question:'Example',options:{A:'One',B:'Two'},answer:'A'};return parseImport(JSON.stringify({subject:'CAPF',paper:{year:2021},questions:[q]})).questions[0].year==='2021'&&parseImport(JSON.stringify({subject:'CAPF',year:2020,questions:[q]})).questions[0].year==='2020'})()`),true);
+});
+test('CSE has the full exam platform and keeps year attempts separate from CAPF', () => {
+  const run=app();yearFixture(run);
+  assert.equal(run(`(()=>{S.packs.push({id:'cse::paper',title:'CSE PYQ 2021',questions:[{...question,year:'2021'}]});S.space='cse';rebuild();const home=viewHome();attemptPyqYear('2021');const isolated=S.quiz.uids.join()==='cse::paper:1'&&S.quiz.kind==='CSE year PYQ';reviewPyqYear('2021');return isolated&&home.includes('CSE PYQ Practice')&&home.includes('Daily revision')&&home.includes('First attempts vs repeat practice')&&home.includes('CSE PYQs by year')&&header().includes('data-v="import"')&&viewTest().includes('CSE PYQs · 2021')&&!home.includes('reserved for later')})()`),true);
+});
+test('year-wise PYQs are the final home section in both exam spaces', () => {
+  const run=app();yearFixture(run);
+  assert.equal(run(`(()=>{S.packs.push({id:'cse::paper',title:'CSE 2020',questions:[{...question,year:'2020'}]});return ['capf','cse'].every(space=>{S.space=space;rebuild();const html=viewHome();return html.lastIndexOf('<section class="card">')===html.indexOf('<section class="card"><div class="row sp"><h2>'+spaceName()+' PYQs by year')&&html.indexOf(spaceName()+' PYQs by year')>html.indexOf('Memory Heatmap')&&!html.includes('Tests not attempted yet')&&!html.includes('<h2>Review a test</h2>')})})()`),true);
+});
+test('CSE imports support optional year metadata and preserve exam identity in backup', async () => {
+  const run=app();
+  assert.equal(await run(`(async()=>{S.space='cse';S.imp={year:'2020',parsed:{id:scopedPackId('new'),title:'CSE PYQs',questions:[question]},dups:[]};await applyImport(false);const backup=parseBackup(buildBackup());return disk.get('cse::new').questions[0].year==='2020'&&backup.packs.some(p=>p.id==='cse::new')&&pyqYearQuestions('2020').length===1})()`),true);
 });
