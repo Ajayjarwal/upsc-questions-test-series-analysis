@@ -199,3 +199,11 @@ test('CSE imports support optional year metadata and preserve exam identity in b
   const run=app();
   assert.equal(await run(`(async()=>{S.space='cse';S.imp={year:'2020',parsed:{id:scopedPackId('new'),title:'CSE PYQs',questions:[question]},dups:[]};await applyImport(false);const backup=parseBackup(buildBackup());return disk.get('cse::new').questions[0].year==='2020'&&backup.packs.some(p=>p.id==='cse::new')&&pyqYearQuestions('2020').length===1})()`),true);
 });
+test('CSE compacts blank question lines without changing stored text or other spaces', () => {
+  const run=app();
+  assert.equal(run(String.raw`(()=>{const raw='Prompt\n\n\n1. First statement\n\n2. Second statement\n\nSelect an option';S.packs[0].questions[0].text=raw;S.space='cse';const compact=questionDisplayText(raw);const table=fmtQ('| A | B |\n|---|---|\n| One | Two |\n\n| C | D |\n|---|---|\n| Three | Four |');S.space='static';return compact==='Prompt\n1. First statement\n2. Second statement\nSelect an option'&&S.packs[0].questions[0].text===raw&&questionDisplayText(raw)===raw&&(table.match(/<table>/g)||[]).length===2})()`),true);
+});
+test('CSE topic grid keeps import order, counts and topic selections', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.space='cse';const items=[{...question,topic:'Early Medieval India'},{...question,no:2,topic:'Delhi Sultanate'},{...question,no:3,topic:'Bhakti Movement'}];const g=groupBySubject(items),o={subjects:new Set(['Science']),topics:new Set(['Science›Bhakti Movement'])};const html=topicGroups(o,g,['Science']);S.space='static';const original=topicGroups(o,g,['Science']);return html.includes('topic-grid')&&(html.match(/class="topic-card"/g)||[]).length===3&&html.indexOf('Early Medieval India')<html.indexOf('Delhi Sultanate')&&html.includes('aria-pressed="true" data-act="topic" data-v="Science›Bhakti Movement"')&&!original.includes('topic-grid')&&original.includes('class="chip"')})()`),true);
+});

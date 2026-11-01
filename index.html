@@ -84,6 +84,17 @@ textarea{width:100%;min-height:170px;font:13px/1.45 ui-monospace,Menlo,Consolas,
 .sc[aria-pressed=true] .chk{background:var(--gold);border-color:var(--gold)}
 .foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
+/* CSE uses aligned topic cards and compact question spacing. */
+.topic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.topic-card{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:0;min-height:88px;padding:16px;text-align:left;background:var(--card);border:1px solid var(--rule);border-radius:16px;cursor:pointer}
+.topic-info{display:flex;flex-direction:column;gap:4px;min-width:0}
+.topic-name{font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+.topic-count{font-size:14px;color:var(--muted)}
+.topic-card[aria-pressed=true]{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+.topic-card[aria-pressed=true] .chk{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+@media(max-width:780px){.topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.topic-grid{grid-template-columns:1fr}}
+
 /* quiz */
 .qhead{display:flex;align-items:center;gap:14px}
 .bar{flex:1;height:6px;border-radius:3px;background:var(--rule);overflow:hidden}
@@ -445,6 +456,15 @@ details.nbq[open] .dots{display:none}
 .focuslist .focus{min-height:104px;flex:none}
 .pal .chips{gap:6px}.pal .chips .pbtn{padding:6px 11px;font-size:13px}
 .scrolllist{max-height:340px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain}
+:root[data-space="cse"] .qtext{line-height:1.45}
+:root[data-space="cse"] .qlayout>section.card{gap:10px}
+:root[data-space="cse"] .opts,:root[data-space="cse"] .review-options{gap:8px}
+:root[data-space="cse"] .opt{padding:10px 14px;gap:12px}
+:root[data-space="cse"] .review-option{padding:12px 14px;gap:12px}
+:root[data-space="cse"] .review-option.right,:root[data-space="cse"] .review-option.wrong{padding:11px 13px}
+:root[data-space="cse"] .review-text{white-space:normal;line-height:1.45}
+:root[data-space="cse"] .nbbody{gap:10px}
+:root[data-space="cse"] details.nbq>summary{gap:10px}
 </style>
 </head>
 <body>
@@ -768,8 +788,21 @@ function parseImport(text){
 }
 
 /* ---------- solution formatting ---------- */
+function questionDisplayText(text){
+  if(S.space!=="cse")return String(text);
+  const lines=String(text).replace(/\r\n?/g,"\n").split("\n"),out=[];
+  const tableLine=line=>line.includes("|")||line.includes("\t");
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(line.trim()){out.push(line);continue;}
+    // Retain a separator between distinct tables; remove empty prose lines.
+    const next=lines.slice(i+1).find(x=>x.trim());
+    if(out.length&&tableLine(out[out.length-1])&&next&&tableLine(next))out.push("");
+  }
+  return out.join("\n").trim();
+}
 function fmtQ(text){
-  const lines=String(text).split("\n"),out=[];let buf=[],tbl=[];
+  const lines=questionDisplayText(text).split("\n"),out=[];let buf=[],tbl=[];
   const cells=l=>{let s=l.trim();if(s.includes("|")){s=s.replace(/^\|/,"").replace(/\|$/,"");return s.split("|").map(x=>x.trim());}if(l.includes("\t"))return l.split("\t").map(x=>x.trim());return null;};
   const isSep=c=>c.length&&c.every(x=>/^:?-{2,}:?$/.test(x));
   const flushT=()=>{
@@ -942,9 +975,15 @@ function viewHome(){
 }
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
-    const ks=[...g.get(sub).keys()].map(t=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=[...g.get(sub).values()].reduce((a,l)=>a+l.length,0);
-    return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="row">${[...g.get(sub)].map(([t,list])=>{const k=topicKey(sub,t);return `<button class="chip" aria-pressed="${o.topics.has(k)}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`;}).join("")}</div></div>`;}).join("");
+    const entries=[...g.get(sub)],ks=entries.map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
+    const cards=S.space==="cse";
+    return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="${cards?"topic-grid":"row"}">${entries.map(([t,list])=>{
+      const k=topicKey(sub,t),on=o.topics.has(k);
+      return cards?`<button class="topic-card" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}"><span class="topic-info"><span class="topic-name">${esc(t)}</span><span class="topic-count">${list.length} question${list.length===1?"":"s"}</span></span><span class="chk" aria-hidden="true">${on?ic("check"):""}</span></button>`:`<button class="chip" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`;
+    }).join("")}</div></div>`;
+  }).join("");
 }
+
 function viewWiz(){
   const sel=S.sel,subjects=[...new Set(S.qs.map(q=>q.subject))].sort();
   const tabs=`<div class="steps"><span class="${S.step===1?"on":""}">Subjects</span><span class="${S.step===2?"on":""}">Preferences</span></div>`;
@@ -1160,17 +1199,17 @@ function reviewOptions(q,pick=""){
 function qCard(q,extra,pickArg,status){
   const p=S.prog[q.uid]||{},pick=pickArg!==undefined&&pickArg!==null?pickArg:(p.x||"");
   const chip=status==="ok"?`<span class="chip2 ok">Correct</span>`:status==="bad"?`<span class="chip2 bad">Incorrect</span>`:status==="skip"?`<span class="chip2 skip">Skipped</span>`:"";
-  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}${reviewOptions(q,pick)}${reasoningNote(p.rn)}${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
+  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(questionDisplayText(q.text))}</span></summary><div class="body">${figs(q.qimg)}${reviewOptions(q,pick)}${reasoningNote(p.rn)}${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
 }
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
-  const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
+  const ls=questionDisplayText(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q,picked)}
   ${picked?cfShow(p.cf)+whyChips(q.uid):""}${reasoningNote(p.rn)}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
-  const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
+  const ls=questionDisplayText(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q)}
   ${solution(q)}</div></details>`;
