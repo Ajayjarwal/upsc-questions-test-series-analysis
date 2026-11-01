@@ -153,6 +153,25 @@ details.src a{color:var(--gold);word-break:break-all}
 .track{height:8px;border-radius:4px;background:var(--rule);overflow:hidden}
 .track b{display:block;height:100%;background:var(--good)}
 
+/* Notebook overview on the Practice page. */
+.notebook-overview{gap:18px;padding:28px}
+.notebook-overview-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.notebook-overview .icon{width:48px;height:48px}
+.notebook-total{text-align:right;display:flex;flex-direction:column;gap:4px;min-width:0}
+.notebook-total .big{font-size:56px;overflow-wrap:anywhere}
+.notebook-total .hint{font-size:14px}
+.notebook-overview h2{font-size:23px}
+.notebook-distribution{display:flex;gap:4px;width:100%;height:9px;margin:2px 0 0}
+.notebook-segment{height:100%;border-radius:999px;min-width:0;flex-basis:0}
+.notebook-legend{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:0;padding:0;list-style:none}
+.notebook-legend li{display:inline-flex;align-items:baseline;gap:7px;min-width:0;font-size:14px;line-height:1.5;color:var(--muted)}
+.notebook-dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none;align-self:center}
+.notebook-subject{overflow-wrap:anywhere}
+.notebook-legend strong{color:var(--ink);font-weight:700}
+.notebook-overview .notebook-caption{margin-top:2px}
+.notebook-overview .notebook-action{margin-top:6px}
+@media(max-width:480px){.notebook-overview{padding:20px;gap:16px}.notebook-total .big{font-size:42px}.notebook-overview h2{font-size:21px}.notebook-legend{gap:8px 14px}.notebook-distribution{gap:3px}}
+
 /* notebook + bookmarks */
 .grp{border:1px solid var(--rule);border-radius:20px;background:var(--card);overflow:hidden}
 .grp>header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--rule)}
@@ -490,6 +509,7 @@ const LOCAL_PREVIEW=["localhost","127.0.0.1","[::1]"].includes(location.hostname
 const IC={
   quiz:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>',
   smart:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  notebook:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M3 7h4M3 11h4M3 15h4M3 19h4m5-8 5-5 2 2-5 5-3 1z"/>',
   book:'<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
   mark:'<path d="M7 4h10a1 1 0 0 1 1 1v16l-6-4-6 4V5a1 1 0 0 1 1-1z"/>',
   heat:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
@@ -950,6 +970,20 @@ function unattemptedCard(){
   if(!rows.length)return "";
   return `<div class="card"><div class="row sp"><div><strong>Tests not attempted yet</strong><div class="muted" style="font-size:14px">${rows.length} test${rows.length===1?"":"s"} you have never started</div></div>${modeSeg()}</div><div class="${rows.length>4?"scrolllist":""}">${rows.map(r=>`<div class="pack"><div><strong>${esc(r.p.title)}</strong><div class="muted" style="font-size:14px">${r.n} question${r.n===1?"":"s"}</div></div><button class="btn pri sm" data-act="attemptpack" data-v="${esc(r.p.id)}">Attempt</button></div>`).join("")}</div></div>`;
 }
+const NOTEBOOK_COLOURS=["#1da2bf","#9182e7","#d44d85","#7e9fc0","#b87cad","#249c45","#3989e0","#e9656c","#b77951","#20a47d","#92a51c","#cf9200","#7b828c","#dc6026"];
+function notebookSubjects(){
+  const counts=new Map();for(const q of openMistakes())counts.set(q.subject,(counts.get(q.subject)||0)+1);
+  return [...counts].map(([subject,count])=>({subject,count})).sort((a,b)=>b.count-a.count).map((row,i)=>({...row,colour:NOTEBOOK_COLOURS[i%NOTEBOOK_COLOURS.length]}));
+}
+function notebookOverview(){
+  const rows=notebookSubjects(),total=rows.reduce((n,r)=>n+r.count,0),lead=rows[0];
+  return `<section class="card notebook-overview" aria-labelledby="notebook-overview-title"><div class="notebook-overview-top"><div class="icon">${ic("notebook")}</div><div class="notebook-total"><strong class="big">${total}</strong><span class="hint">question${total===1?"":"s"} to fix</span></div></div>
+  <h2 id="notebook-overview-title">Personal Mistakes Notebook</h2><p class="muted">Every question you got wrong or skipped, with the correct answer and solution</p>
+  ${total?`<div class="notebook-distribution" role="img" aria-label="Mistakes by subject; counts are listed below">${rows.map(r=>`<span class="notebook-segment" style="flex-grow:${r.count};background:${r.colour}" title="${esc(r.subject)}: ${r.count}"></span>`).join("")}</div>
+  <ul class="notebook-legend" aria-label="Mistakes by subject">${rows.map(r=>`<li><span class="notebook-dot" style="background:${r.colour}" aria-hidden="true"></span><span class="notebook-subject">${esc(r.subject)}</span><strong>${r.count}</strong></li>`).join("")}</ul>
+  <p class="hint notebook-caption">${rows.length} subject${rows.length===1?"":"s"} · ${esc(lead.subject)} leads with ${lead.count}</p>`:`<p class="hint">No mistakes yet — questions you get wrong or skip land here automatically</p>`}
+  <div class="notebook-action"><button class="btn pri" data-act="tab" data-v="notebook">Open Notebook</button></div></section>`;
+}
 function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
   const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length;
@@ -962,11 +996,7 @@ function viewHome(){
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
     <div class="card${ready?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first, topics mixed</p><p class="hint">${ready?`${ready} mistake${ready===1?"":"s"} ready to reattempt${mis>ready?` \u00b7 ${mis-ready} already done today`:""}`:mis?"All mistakes answered correctly today. They return tomorrow":"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${ready?"":"disabled"}>Start Smart Quiz</button></div>
   </div>
-  <div class="card"><div class="row"><div class="icon">${ic("book")}</div><h2>Personal Mistakes Notebook</h2></div>
-    <p class="muted">Every question you got wrong or skipped, with the correct answer and solution</p>
-    <div class="row" style="align-items:baseline;gap:12px"><span class="big">${mis}</span><span class="muted">question${mis===1?"":"s"} to fix</span></div>
-    ${mis?"":`<p class="hint">No mistakes yet — questions you get wrong or skip land here automatically</p>`}
-    <div><button class="btn pri" data-act="tab" data-v="notebook">Open Notebook</button></div></div>
+  ${notebookOverview()}
   <div class="grid2">
     <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
     <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>

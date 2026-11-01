@@ -207,3 +207,7 @@ test('CSE topic grid keeps import order, counts and topic selections', () => {
   const run=app();
   assert.equal(run(`(()=>{S.space='cse';const items=[{...question,topic:'Early Medieval India'},{...question,no:2,topic:'Delhi Sultanate'},{...question,no:3,topic:'Bhakti Movement'}];const g=groupBySubject(items),o={subjects:new Set(['Science']),topics:new Set(['Science›Bhakti Movement'])};const html=topicGroups(o,g,['Science']);S.space='static';const original=topicGroups(o,g,['Science']);return html.includes('topic-grid')&&(html.match(/class="topic-card"/g)||[]).length===3&&html.indexOf('Early Medieval India')<html.indexOf('Delhi Sultanate')&&html.includes('aria-pressed="true" data-act="topic" data-v="Science›Bhakti Movement"')&&!original.includes('topic-grid')&&original.includes('class="chip"')})()`),true);
 });
+test('notebook overview counts open mistakes once per question and only in the active space', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.space='cse';S.packs=[{id:'cse::demo',questions:[{...question,subject:'Polity'},{...question,no:2,subject:'Polity'},{...question,no:3,subject:'Geography'},{...question,no:4,subject:'Geography'}]},{id:'capf::demo',questions:[question]}];S.prog={'cse::demo:1':{m:1,w:9},'cse::demo:2':{m:1,sk:2},'cse::demo:3':{m:1,w:1},'cse::demo:4':{m:0,w:3},'capf::demo:1':{m:1,w:1}};rebuild();const rows=notebookSubjects();return rows.length===2&&rows[0].subject==='Polity'&&rows[0].count===2&&rows[1].count===1&&notebookOverview().includes('2 subjects · Polity leads with 2')})()`),true);
+});
