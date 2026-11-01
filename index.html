@@ -357,7 +357,7 @@ details.nbq[open] .dots{display:none}
 #toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 @media (max-width:640px){.qbar{padding-inline:16px}}
 
-.spaces{display:flex;gap:8px}
+.spaces{display:flex;flex-wrap:wrap;gap:8px}
 .spc{border:1px solid var(--rule);background:transparent;color:var(--muted);padding:7px 16px;border-radius:999px;font-weight:600;font-size:13px;cursor:pointer}
 .spc[aria-selected=true]{background:var(--gold-soft);border-color:var(--gold);color:var(--gold)}
 
@@ -459,6 +459,8 @@ const BUCKETS=[["b0","Not attempted"],["b1","Under 40%"],["b2","40-59%"],["b3","
 const MAXSUBJ=3;
 /* Hosting config. Fill these in when you deploy (see README). Leave empty to run without a login (Claude account or this browser). */
 const CONFIG={supabaseUrl:"https://etdfbbtnthwjsroydxsa.supabase.co",supabaseKey:"sb_publishable_N0g-0D1Gd1hXJOmmrgEKfQ_-LBllhv3",googleLogin:false,requireLogin:true};
+// Preview is available only on a local development host.
+const LOCAL_PREVIEW=["localhost","127.0.0.1","[::1]"].includes(location.hostname)&&new URLSearchParams(location.search).get("preview")==="1";
 const IC={
   quiz:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>',
   smart:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
@@ -469,13 +471,19 @@ const IC={
 };
 const ic=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 
+const SPACES={
+  static:{label:"Static",prefix:""},
+  ca:{label:"Current Affairs",prefix:"ca::"},
+  cse:{label:"CSE",prefix:"cse::"},
+  capf:{label:"CAPF",prefix:"capf::"}
+};
 /* ---------- state ---------- */
 const S={
   tab:"practice", view:"home", step:1, ready:false, storage:"browser", store:null, auth:(CONFIG.supabaseUrl||CONFIG.requireLogin)?"checking":"none", authErr:"", authMode:"in", authMsg:null, authEmail:"", user:null, sb:null,
   packs:[], qs:[], byUid:new Map(), prog:{},
   sel:{subjects:new Set(),topics:new Set(),pack:"all",which:"prio",mode:"practice",count:20,custom:15},
   nb:{subject:undefined}, smart:{subject:"",subjects:new Set(),topics:new Set(),step:1,count:20,custom:15,mode:"practice",back:"practice"}, heatBy:"topic", heatAll:false,
-  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{return localStorage.getItem("rd_space")==="ca"?"ca":"static";}catch(e){return "static";}})(), mdText:"",theme:(()=>{try{return localStorage.getItem("rd_theme")==="light"?"light":"dark";}catch(e){return "dark";}})()
+  quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{const saved=localStorage.getItem("rd_space");return Object.hasOwn(SPACES,saved)?saved:"static";}catch(e){return "static";}})(), mdText:"",theme:(()=>{try{return localStorage.getItem("rd_theme")==="light"?"light":"dark";}catch(e){return "dark";}})()
 };
 const app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -513,8 +521,7 @@ function dbBackend(db,uid){
     async deletePack(p){for(let j=0;j<(p.chunks||1);j++)await col.doc("pack_"+p.id+"_"+j).delete();await col.doc("prog_"+p.id).delete();}
   };
 }
-function localBackend(){
-  const K="recall-desk-v1";
+function localBackend(K="recall-desk-v1"){
   const read=()=>{try{return JSON.parse(localStorage.getItem(K))||{packs:{},prog:{}};}catch(e){return {packs:{},prog:{}};}};
   const write=d=>{try{localStorage.setItem(K,JSON.stringify(d));}catch(e){throw new Error("This browser blocked saving.");}};
   return {
@@ -539,13 +546,21 @@ function supaBackend(sb,uid){
   };
 }
 let chain=Promise.resolve();
-function enqueue(fn){chain=chain.then(fn).catch(e=>{toast("Could not save: "+((e&&e.message)||"unknown error"));});return chain;}
+function enqueue(fn){
+  const pending=chain.then(fn);
+  // Recover the queue while returning the failure to the action awaiting this save.
+  chain=pending.catch(e=>{toast("Could not save: "+((e&&e.message)||"unknown error"));});
+  return pending;
+}
 
 /* ---------- data model ---------- */
-const CAP="ca::";
-function inSpace(id){return S.space==="ca"?String(id).startsWith(CAP):!String(id).startsWith(CAP);}
+function packSpace(id){
+  return Object.keys(SPACES).find(k=>SPACES[k].prefix&&String(id).startsWith(SPACES[k].prefix))||"static";
+}
+function scopedPackId(id,space=S.space){const prefix=SPACES[space].prefix;return prefix&&!String(id).startsWith(prefix)?prefix+id:id;}
+function inSpace(id){return packSpace(id)===S.space;}
 function spacePacks(){return S.packs.filter(p=>inSpace(p.id));}
-function spaceName(){return S.space==="ca"?"Current Affairs":"Static";}
+function spaceName(){return SPACES[S.space].label;}
 const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const curMonth=()=>mKey(Date.now());
 function mKey(ts){const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
@@ -580,7 +595,7 @@ const dayKey=t=>{const d=t?new Date(t):new Date();return d.getFullYear()+"-"+Str
 const addDays=(k,n)=>{const a=k.split("-").map(Number);return dayKey(new Date(a[0],a[1]-1,a[2]+n).getTime());};
 const BOX_DAYS=[0,1,2,4,8,16],SLOW_S=90,CLEAR_DAYS=3,DUE_CAP=25;
 const CONF={s:"Sure",h:"50-50",g:"Guess"},WHY={k:"Didn't know",c:"Confused options",m:"Misread",s:"Silly mistake"};
-const dueDay=p=>{if(!p||!p.a)return null;return p.dd||addDays(dayKey(p.t||Date.now()),p.l==="c"?2:1);};
+const dueDay=p=>{if(!p||(!p.a&&!p.sk))return null;return p.dd||addDays(dayKey(p.t||Date.now()),p.a&&p.l==="c"?2:1);};
 const Z2=1.28*1.28,wilsonAcc=(ok,n)=>n?(ok/n+Z2/(2*n))/(1+Z2/n):0.5;
 function topicScore(qs){
   let att=0,ok=0,cw=0,last=0;
@@ -610,13 +625,17 @@ function tickQ(){
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")tickQ();else if(S.quiz&&!S.quiz.done)S.quiz.t0=Date.now();});
 const getP=uid=>S.prog[uid]||(S.prog[uid]={a:0,c:0,w:0,sk:0,l:"",m:0,x:"",b:0,t:0});
 let saveSet=new Set(),saveTimer=0;
-function queueSave(pid){saveSet.add(pid);clearTimeout(saveTimer);saveTimer=setTimeout(flush,700);}
+function queueSave(pid){saveSet.add(pid);clearTimeout(saveTimer);saveTimer=setTimeout(flushInBackground,700);}
 function flush(){
   clearTimeout(saveTimer);
-  for(const pid of saveSet){const items=itemsFor(pid);enqueue(()=>S.store.saveProg(pid,items));}
-  saveSet=new Set();
+  const store=S.store,pids=[...saveSet];saveSet=new Set();
+  return Promise.all(pids.map(pid=>{
+    const items=itemsFor(pid);
+    return enqueue(()=>store.saveProg(pid,items)).catch(e=>{if(S.store===store)saveSet.add(pid);throw e;});
+  }));
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
+function flushInBackground(){flush().catch(()=>{});}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushInBackground();});
 
 function stat(list){
   let att=0,ok=0,mis=0,ever=0;
@@ -645,6 +664,18 @@ function figs(list){
   return `<div class="figs">${list.map(f=>`<figure><img src="${esc(f.src)}" alt="${esc(f.cap||"Figure")}" loading="lazy" data-act="zoom" data-v="${esc(f.src)}">${f.cap?`<figcaption>${esc(f.cap)}</figcaption>`:""}</figure>`).join("")}</div>`;
 }
 
+/* Answer keys may accept several alternatives; an attempt always selects one. */
+function normalizeAnswerKey(value){
+  const raw=Array.isArray(value)?value:String(value??"").trim().split(/\s+or\s+|[,/|;+&]/i);
+  if(!raw.length)return [];
+  const keys=raw.map(x=>String(x).trim().toUpperCase().replace(/^[([]|[)\]]$/g,""));
+  if(keys.some(k=>! /^[A-F1-6]$/.test(k)))return [];
+  return [...new Set(keys.map(k=>/^[1-6]$/.test(k)?"ABCDEF"[Number(k)-1]:k))].sort();
+}
+const acceptedAnswers=q=>normalizeAnswerKey(q.answer);
+const isAcceptedAnswer=(q,pick)=>acceptedAnswers(q).includes(pick);
+const answerKeyNote=q=>acceptedAnswers(q).length>1?`<p class="info">Answer key accepts ${acceptedAnswers(q).join(" or ")}. Any one of these options is marked correct.</p>`:"";
+
 /* ---------- import parsing ---------- */
 function parseImport(text){
   let data;
@@ -672,9 +703,9 @@ function parseImport(text){
     if(Array.isArray(r.options))r.options.forEach((o,k)=>{opts[letters[k]]=String(o).trim();});
     else if(r.options&&typeof r.options==="object")for(const k in r.options){const L=String(k).toUpperCase().replace(/[^A-F]/g,"");if(L)opts[L]=String(r.options[k]).trim();}
     if(Object.keys(opts).length<2){errors.push(lab+": needs at least 2 options");return;}
-    let ans=String(r.answer===undefined?"":r.answer).trim().toUpperCase().replace(/[^A-F1-6]/g,"");
-    if(/^[1-6]$/.test(ans))ans=letters[Number(ans)-1];
-    if(!opts[ans]){errors.push(lab+": answer \""+(r.answer===undefined?"":r.answer)+"\" does not match an option");return;}
+    const answers=normalizeAnswerKey(r.accepted_answers??r.answers??r.answer);
+    if(!answers.length||answers.some(L=>!opts[L])){errors.push(lab+": answer key must contain valid option letters");return;}
+    const ans=answers.length===1?answers[0]:answers;
     let no=parseInt(r.no!==undefined?r.no:r.qno,10);
     if(!Number.isInteger(no)||no<1||used.has(no)){no=1;while(used.has(no))no++;}
     used.add(no);
@@ -746,9 +777,10 @@ function fmtSol(text){
   return html;
 }
 function solution(q){
-  if(!q.exp&&!q.sum&&!(q.simg||[]).length)return "";
+  const keyNote=answerKeyNote(q);
+  if(!q.exp&&!q.sum&&!(q.simg||[]).length)return keyNote;
   const links=q.src.map(u=>/^https?:\/\/\S+/.test(u)?`<a href="${esc(u.split(/\s+/)[0])}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`:`<span class="muted">${esc(u)}</span>`).join("");
-  return `<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}${figs(q.simg)}${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}</div>`;
+  return `${keyNote}<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}${figs(q.simg)}${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}</div>`;
 }
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
@@ -761,12 +793,12 @@ function header(){
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
   return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
-  <div class="spaces" role="tablist" aria-label="Question space">${[["static","Static"],["ca","Current Affairs"]].map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
-  <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
+  <div class="spaces" role="tablist" aria-label="Question space">${Object.entries(SPACES).map(([k,space])=>[k,space.label]).map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
+  ${S.space==="cse"?"":`<nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`}`;
 }
 function emptyBank(){
-  return `<section class="card"><h2>Your question bank is empty</h2>
-  <p class="muted">Import a question set to begin. Each file creates its subject and sub-topic lists on its own.</p>
+  return `<section class="card"><h2>${S.space==="capf"?"Your CAPF PYQ bank is empty":"Your question bank is empty"}</h2>
+  <p class="muted">${S.space==="capf"?"Import your CAPF PYQ JSON files to begin. Subjects and sub-topics are created from each file.":"Import a question set to begin. Each file creates its subject and sub-topic lists on its own."}</p>
   <div class="row"><button class="btn pri" data-act="tab" data-v="import">Import questions</button></div></section>`;
 }
 
@@ -815,9 +847,9 @@ function unattemptedCard(){
 }
 function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
-  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length,due=dueList().length,anyAtt=S.qs.some(q=>S.prog[q.uid]&&S.prog[q.uid].a);
+  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length,due=dueList().length,anyAtt=S.qs.some(q=>S.prog[q.uid]&&(S.prog[q.uid].a||S.prog[q.uid].sk));
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
-  return `<div class="field" style="gap:6px"><h1>Practice</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
+  return `<div class="field" style="gap:6px"><h1>${S.space==="capf"?"CAPF PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
   ${has?"":emptyBank()}
   ${unattemptedCard()}
   ${has&&anyAtt?`<div class="newbar"><div><strong>Due today: ${due}</strong><div class="muted" style="font-size:14px">${due?`Revise before you forget${due>DUE_CAP?` \u00b7 today's round has the ${DUE_CAP} most overdue`:""}`:"Nothing due. Reviews are scheduled automatically after every answer."}</div></div><button class="btn pri" data-act="duego" ${due?"":"disabled"}>Start review${due?` (${Math.min(due,DUE_CAP)})`:""}</button></div>`:""}
@@ -914,7 +946,7 @@ function viewReview(){
   const Q=S.quiz,uid=Q.uids[Q.rv],q=S.byUid.get(uid),r=Q.res[uid],pick=r.pick||"",last=Q.rv===Q.uids.length-1;
   const opts=Object.keys(q.options).map(L=>{
     let cls="opt",flag="";
-    if(L===q.answer){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
+    if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
     return `<button class="${cls}" disabled><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
   }).join("");
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
@@ -932,7 +964,7 @@ function viewQuiz(){
   const cur=exam?Q.ans[uid]:(locked?r.pick:Q.sel[uid]);
   const opts=Object.keys(q.options).map(L=>{
     let cls="opt",flag="";
-    if(locked){if(L===q.answer){cls+=" right";flag="Correct";}else if(L===cur){cls+=" wrong";flag="Your answer";}}
+    if(locked){if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===cur){cls+=" wrong";flag="Your answer";}}
     else if(cur===L)cls+=" sel";
     return `<button class="${cls}" data-act="pick" data-v="${L}" role="radio" aria-checked="${cur===L}" ${locked?"disabled":""}><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
   }).join("");
@@ -1016,25 +1048,25 @@ function viewResult(){
 /* ---------- notebook + saved ---------- */
 function mdFor(list){
   const g=groupBySubject(list);let out="# Mistake notebook\n";
-  for(const [sub,tm] of g){out+="\n## "+sub+"\n";for(const [t,qs] of tm){out+="\n### "+t+"\n";for(const q of qs){out+="- "+q.text.replace(/\n+/g," ")+" **Ans: "+q.answer+") "+q.options[q.answer]+"**"+((q.sum||q.exp)?" - "+(q.sum||q.exp).replace(/\n+/g," "):"")+"\n";}}}
+  for(const [sub,tm] of g){out+="\n## "+sub+"\n";for(const [t,qs] of tm){out+="\n### "+t+"\n";for(const q of qs){out+="- "+q.text.replace(/\n+/g," ")+" **Ans: "+acceptedAnswers(q).map(L=>L+") "+q.options[L]).join(" or ")+"**"+((q.sum||q.exp)?" - "+(q.sum||q.exp).replace(/\n+/g," "):"")+"\n";}}}
   return out;
 }
 function qCard(q,extra,pickArg,status){
   const p=S.prog[q.uid]||{},pick=pickArg!==undefined&&pickArg!==null?pickArg:(p.x||"");
   const chip=status==="ok"?`<span class="chip2 ok">Correct</span>`:status==="bad"?`<span class="chip2 bad">Incorrect</span>`:status==="skip"?`<span class="chip2 skip">Skipped</span>`:"";
-  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct)":L===pick?" (you chose)":""}</span></div>`).join("")}</div>${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
+  return `<details class="mq"><summary><span class="muted">Q${q.no}</span>${chip}<span class="q">${esc(q.text)}</span></summary><div class="body">${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":L===pick?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct)":L===pick?" (you chose)":""}</span></div>`).join("")}</div>${solution(q)}<div class="row sp"><span class="muted" style="font-size:13px">${extra||""}</span>${bmBtn(q.uid)}</div></div></details>`;
 }
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":L===picked?"wrong":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct answer)":L===picked?" (your answer)":""}</span></div>`).join("")}</div>
   ${picked?cfShow(p.cf)+whyChips(q.uid):""}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=String(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
   return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
-  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${L===q.answer?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${L===q.answer?" (correct answer)":""}</span></div>`).join("")}</div>
+  <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}<div class="mini">${Object.keys(q.options).map(L=>`<div class="${isAcceptedAnswer(q,L)?"right":""}"><b>${L}</b><span>${esc(q.options[L])}${isAcceptedAnswer(q,L)?" (correct answer)":""}</span></div>`).join("")}</div>
   ${solution(q)}</div></details>`;
 }
 function moveBlock(q){
@@ -1060,8 +1092,9 @@ async function doMove(uid,sj,tp){
   const tps=[...new Set(S.qs.filter(x=>x.subject===sj).map(x=>x.topic))];tp=tps.find(x=>x.toLowerCase()===tp.toLowerCase())||tp;
   if(sj===q.subject&&tp===q.topic){toast("Already there");return;}
   const pk=S.packs.find(x=>x.id===q.packId),q0=pk&&pk.questions.find(x=>x.no===q.no);if(!q0)return;
-  const old=pk.chunks||1;q0.subject=sj;q0.topic=tp;rebuild();render();
-  await enqueue(()=>S.store.savePack(pk,old));toast("Moved to "+sj+" \u203a "+tp);
+  const old=pk.chunks||1,updated={...pk,questions:pk.questions.map(x=>x===q0?{...x,subject:sj,topic:tp}:x)};
+  await enqueue(()=>S.store.savePack(updated,old));
+  S.packs=S.packs.map(x=>x===pk?updated:x);rebuild();render();toast("Moved to "+sj+" \u203a "+tp);
 }
 const stOf=q=>{const p=S.prog[q.uid];return p&&p.a?(p.l==="c"?"ok":"bad"):(p&&p.sk?"skip":"new");};
 function trList(){
@@ -1085,7 +1118,7 @@ function viewTest(){
   const q=list[i],p=S.prog[q.uid]||{},st=stOf(q),pick=st==="bad"?(p.x||""):"";
   const opts=Object.keys(q.options).map(L=>{
     let cls="opt",flag="";
-    if(L===q.answer){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
+    if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===pick){cls+=" wrong";flag="Your answer";}
     return `<button class="${cls}" disabled><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
   }).join("");
   const verdict={ok:`<p class="note">Correct</p>`,bad:`<p class="note bad">Wrong${p.cf==="s"?" \u00b7 you were sure":""}</p>`,skip:`<p class="note skip">Skipped</p>`,"new":`<p class="note skip">Not answered</p>`}[st];
@@ -1195,7 +1228,7 @@ function findSimilar(r){
   return out;
 }
 function dupCard(d,i){
-  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><div class="dq">${fmtQ(q.text)}</div><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${L===q.answer?"right":""}"><b>${L}</b> ${esc(q.options[L])}${L===q.answer?" ✓":""}</li>`).join("")}</ul></div>`;
+  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><div class="dq">${fmtQ(q.text)}</div><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${isAcceptedAnswer(q,L)?"right":""}"><b>${L}</b> ${esc(q.options[L])}${isAcceptedAnswer(q,L)?" ✓":""}</li>`).join("")}</ul></div>`;
   return `<div class="dup"><div class="row sp"><strong>New Q${d.newQ.no} looks similar</strong><span class="muted">${Math.round(d.score*100)}% match</span></div><div class="dcols">${side(d.old,"Already in your bank")}${side(d.newQ,"New in this file")}</div>
   <div class="seg">${[["old","Keep existing"],["new","Keep new"],["both","Keep both"]].map(([k,l])=>`<button aria-pressed="${d.choice===k}" data-act="dup" data-i="${i}" data-v="${k}">${l}</button>`).join("")}</div></div>`;
 }
@@ -1217,7 +1250,7 @@ function importPreview(){
     ${S.space==="ca"?`<div class="field"><label class="label" for="impmonth">Month &amp; year of these questions</label><input id="impmonth" class="delin" type="month" value="${esc(S.imp.month||curMonth())}"><p class="hint">Defaults to today. Change it if these questions belong to another month.</p></div>`:""}
     ${modeSeg()}
     <div class="row"><button class="btn pri" data-act="impadd" ${keep?"":"disabled"}>${exists?"Replace":"Add"} test (${keep})</button><button class="btn" data-act="impattempt" ${keep?"":"disabled"}>${exists?"Replace":"Add"} and attempt only these</button>${r.errors.length?`<span class="muted">${r.errors.length} skipped</span>`:""}</div>
-    ${exists?`<p class="hint">The existing set is replaced by this file. Your progress on matching question numbers is kept.</p>`:""}`);
+    ${exists?`<p class="hint">The existing set is replaced by this file. Progress is kept only when the question, options and correct answer are unchanged.</p>`:""}`);
   }
   return bits.join("");
 }
@@ -1239,7 +1272,7 @@ function viewImport(){
   ${spacePacks().length?`<div class="scrolllist">${spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
   ${backupCard()}
-  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
+  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. If the official key accepts either of two options, use "answer": ["A", "C"]. You still select one option; the accepted alternatives appear after checking or submitting. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
 }
 
 /* ---------- render ---------- */
@@ -1255,8 +1288,10 @@ function render(){
   if(S.auth==="checking"){app.innerHTML=splash();return;}
   if(S.auth==="setup"||S.auth==="error"){app.innerHTML=viewSetup();return;}
   if(S.auth==="login"){app.innerHTML=viewLogin();return;}
+  if(S.bankError){app.innerHTML=`<section class="card"><h2>Could not open your question bank</h2><p class="muted">${esc(S.bankError)}</p><p>Your question bank is unavailable until loading succeeds. Please retry.</p><div><button class="btn pri" data-act="retrybank">Retry</button></div></section>`;return;}
   let body;
-  if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
+  if(S.ready&&S.space==="cse")body=`<section class="card"><h1>CSE</h1><p class="muted">This space is reserved for later.</p></section>`;
+  else if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
   else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
@@ -1283,7 +1318,7 @@ function runParse(){
   parseTimer=setTimeout(()=>{
     const p=S.imp.text.trim()?parseImport(S.imp.text):null;
     if(p&&p.id){
-      if(S.space=="ca"&&!String(p.id).startsWith(CAP))p.id=CAP+p.id;
+      p.id=scopedPackId(p.id);
       if(p.month&&S.space=="ca")S.imp.month=p.month;
       p.exists=!!S.packs.find(x=>x.id===p.id);
       if(p.exists&&S.imp.idMode!=="replace"){const base=p.id;let n=2;while(S.packs.find(x=>x.id===base+"-"+n))n++;p.id=base+"-"+n;}
@@ -1334,7 +1369,7 @@ function buildAnalysis(){
   const head=["space","test","q","subject","topic","status","attempts","wrong","skipped","right","sureness","why_missed","last_time_s","avg_time_s","slow_correct","box","due","last_seen","bookmarked","open_mistake"];
   const rows=[head.join(",")];
   for(const pk of S.packs){
-    const sp=String(pk.id).startsWith(CAP)?"current-affairs":"static";
+    const space=packSpace(pk.id),sp=space==="ca"?"current-affairs":space;
     for(const q of pk.questions){
       const p=S.prog[pk.id+":"+q.no];if(!p||!(p.a||p.sk||p.b))continue;
       const st=p.a?(p.l==="c"?"correct":"wrong"):p.sk?"skipped":"new";
@@ -1352,7 +1387,7 @@ function parseBackup(text){
   const packs=[];
   for(const p of d.packs){
     if(!p||!p.id||!Array.isArray(p.questions))continue;
-    const qs=p.questions.filter(q=>q&&Number.isInteger(q.no)&&q.text&&q.options&&q.answer&&q.options[q.answer]);
+    const qs=p.questions.filter(q=>q&&Number.isInteger(q.no)&&q.text&&q.options&&acceptedAnswers(q).length&&acceptedAnswers(q).every(L=>q.options[L]));
     if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs});
   }
   if(!packs.length)return {error:"No question sets were found in this backup."};
@@ -1363,14 +1398,16 @@ async function restoreBackup(){
   for(const p of b.packs){
     const old=S.packs.find(x=>x.id===p.id),oldChunks=old?old.chunks:0;
     const pack={...p,chunks:oldChunks};
+    await enqueue(()=>S.store.savePack(pack,oldChunks));
     S.packs=S.packs.filter(x=>x.id!==p.id).concat(pack);
     rebuild();
-    await enqueue(()=>S.store.savePack(pack,oldChunks));
     const items=b.progress[p.id]||{};
-    for(const no in items)S.prog[p.id+":"+no]=items[no];
+    // A restored set gets exactly the backup's progress, including an empty record.
+    for(const uid of Object.keys(S.prog))if(uid.slice(0,uid.lastIndexOf(":"))===p.id)delete S.prog[uid];
+    for(const q of pack.questions)if(Object.hasOwn(items,q.no))S.prog[p.id+":"+q.no]=items[q.no];
     queueSave(p.id);
   }
-  flush();
+  await flush();
   const n=b.packs.reduce((a,p)=>a+p.questions.length,0);
   S.bk={parsed:null,error:""};toast("Restored "+b.packs.length+" set"+(b.packs.length===1?"":"s")+", "+n+" questions");render();
 }
@@ -1389,7 +1426,7 @@ function backupCard(){
 /* ---------- actions ---------- */
 function recordAnswer(uid,pick,o){
   o=o||{};
-  const q=S.byUid.get(uid),p=getP(uid),ok=pick===q.answer,wasM=!!p.m,td=dayKey();let cleared=false,days=0;
+  const q=S.byUid.get(uid),p=getP(uid),ok=isAcceptedAnswer(q,pick),wasM=!!p.m,td=dayKey();let cleared=false,days=0;
   p.a++;p.t=Date.now();p.cf=o.cf||"";
   if(typeof o.tm==="number"&&o.tm>0){p.tm=Math.round(o.tm);p.ts=(p.ts||0)+p.tm;p.tn=(p.tn||0)+1;p.sl=ok&&p.tm>SLOW_S?1:0;}else p.sl=0;
   if(ok){
@@ -1411,7 +1448,7 @@ function recordAnswer(uid,pick,o){
 }
 function recordSkip(uid){
   const q=S.byUid.get(uid),p=getP(uid);
-  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();queueSave(q.packId);
+  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];queueSave(q.packId);
 }
 function startQuiz(uids,o){
   S.confirmFin=false;S.confirmExit=false;
@@ -1455,46 +1492,66 @@ function finishQuiz(){
       else{recordSkip(u);Q.res[u]={skipped:true,ok:false};}
     }else if(!Q.res[u]){recordSkip(u);Q.res[u]={skipped:true,ok:false};}
   }
-  Q.done=true;Q.elapsed=Date.now()-Q.start;flush();
+  Q.done=true;Q.elapsed=Date.now()-Q.start;flushInBackground();
   const cl=Q.uids.filter(u=>Q.res[u].cleared).length;
   if(cl&&Q.mode==="exam")toast("Cleared "+cl+" from your Notebook");
   render();window.scrollTo(0,0);
+}
+function sameQuestion(a,b){
+  const identity=q=>JSON.stringify({text:q.text,answer:acceptedAnswers(q),options:Object.keys(q.options).sort().map(k=>[k,q.options[k]]),qimg:q.qimg||[]});
+  return identity(a)===identity(b);
 }
 async function addPack(parsed,sample){
   const old=S.packs.find(p=>p.id===parsed.id);
   const pack={id:parsed.id,title:parsed.title,sample:!!sample,ts:Date.now(),questions:parsed.questions,chunks:old?old.chunks:0};
   const oldChunks=old?old.chunks:0;
+  await enqueue(()=>S.store.savePack(pack,oldChunks));
   S.packs=S.packs.filter(p=>p.id!==pack.id).concat(pack);
   rebuild();
-  await enqueue(()=>S.store.savePack(pack,oldChunks));
+  if(old){
+    const previous=new Map(old.questions.map(q=>[q.no,q]));
+    const unchanged=new Set(pack.questions.filter(q=>previous.has(q.no)&&sameQuestion(previous.get(q.no),q)).map(q=>pack.id+":"+q.no));
+    for(const uid of Object.keys(S.prog))if(uid.slice(0,uid.lastIndexOf(":"))===pack.id&&!unchanged.has(uid))delete S.prog[uid];
+    queueSave(pack.id);await flush();
+  }
   return pack;
 }
 async function removeQuestion(uid){
   const q=S.byUid.get(uid);if(!q)return;
   const p=S.packs.find(x=>x.id===q.packId);if(!p)return;
-  const oldChunks=p.chunks||1;
-  p.questions=p.questions.filter(x=>x.no!==q.no);delete S.prog[uid];
-  if(!p.questions.length){S.packs=S.packs.filter(x=>x!==p);rebuild();await enqueue(()=>S.store.deletePack(p));return;}
-  rebuild();await enqueue(()=>S.store.savePack(p,oldChunks));queueSave(p.id);
+  const oldChunks=p.chunks||1,updated={...p,questions:p.questions.filter(x=>x.no!==q.no)};
+  if(!updated.questions.length)await enqueue(()=>S.store.deletePack(p));
+  else await enqueue(()=>S.store.savePack(updated,oldChunks));
+  delete S.prog[uid];
+  S.packs=updated.questions.length?S.packs.map(x=>x===p?updated:x):S.packs.filter(x=>x!==p);
+  rebuild();if(updated.questions.length)queueSave(p.id);
 }
 async function applyImport(attempt){
-  const r=S.imp.parsed;if(!r||!r.questions.length)return;
+  const r=S.imp.parsed;if(!r||!r.questions.length||S.importing)return;
+  S.importing=true;
+  try{
   const dups=S.imp.dups||[],drop=new Set(),del=new Set();
   for(const d of dups){if(d.choice==="old")drop.add(d.no);else if(d.choice==="new")del.add(d.old.uid);}
   const qs=r.questions.filter(q=>!drop.has(q.no));
   if(S.space==="ca"){const mo=okMonth(S.imp.month)?S.imp.month:curMonth();qs.forEach(q=>{q.mo=mo;});}
   if(!qs.length){toast("Nothing left to add");return;}
-  for(const uid of del)await removeQuestion(uid);
+  // Persist the replacement before removing any originals. Same-set originals
+  // have already been replaced by addPack and must not delete the new questions.
   const pack=await addPack({id:r.id,title:(S.imp.name||"").trim()||r.title,questions:qs},false);
+  for(const uid of del)if(uid.slice(0,uid.lastIndexOf(":"))!==pack.id)await removeQuestion(uid);
+  await flush();
   S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};
   const uids=pack.questions.map(q=>pack.id+":"+q.no);
   if(attempt){toast(qs.length+" questions added");startQuiz(uids,{mode:S.newMode,kind:"New import",label:pack.title});}
   else{toast(qs.length+" questions added"+(del.size?", "+del.size+" older replaced":""));S.tab="practice";S.view="home";render();}
+  }finally{S.importing=false;}
 }
 document.addEventListener("click",async e=>{
   const el=e.target.closest("[data-act]");if(!el)return;
   const a=el.dataset.act,v=el.dataset.v,sel=S.view==="smart"?S.smart:S.sel;
+  try{
   switch(a){
+    case "retrybank":if(S.bankRetry)await openBank(S.bankRetry.store,S.bankRetry.mode);break;
     case "tab":S.tab=v;if(v!=="practice")S.view="home";if(v==="notebook"&&el.dataset.quizdone)S.nb.subject=undefined;if(v!=="practice"&&S.quiz&&S.quiz.done&&el.dataset.quizdone)S.quiz=null;S.mdText="";render();window.scrollTo(0,0);break;
     case "startwiz":S.view="wiz";S.step=1;S.quiz=null;render();window.scrollTo(0,0);break;
     case "cancel":S.view="home";sel.subjects=new Set();sel.topics=new Set();sel.months=new Set();render();break;
@@ -1537,7 +1594,7 @@ document.addEventListener("click",async e=>{
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
     case "theme":{S.theme=S.theme==="light"?"dark":"light";try{localStorage.setItem("rd_theme",S.theme);}catch(err){}render();break;}
-    case "space":{if(v===S.space)break;flush();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
+    case "space":{if(!Object.hasOwn(SPACES,v)||v===S.space)break;flushInBackground();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
       S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
       S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
     case "idmode":S.imp.idMode=v;runParse();break;
@@ -1549,9 +1606,9 @@ document.addEventListener("click",async e=>{
     case "finishok":S.confirmFin=false;finishQuiz();break;
     case "finishno":S.confirmFin=false;render();break;
     case "bm":{const q=S.byUid.get(v);if(!q)break;const p=getP(v);p.b=p.b?0:1;queueSave(q.packId);render();break;}
-    case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done){S.confirmExit=true;render();break;}S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
+    case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done){S.confirmExit=true;render();break;}S.confirmExit=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
     case "exitno":S.confirmExit=false;render();break;
-    case "exitok":S.confirmExit=false;flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "exitok":S.confirmExit=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "exit_unused":S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "redo":{const Q=S.quiz;startQuiz(shuffle(Q.uids.filter(u=>!Q.res[u].ok)),{mode:Q.mode,kind:"Redo",label:Q.label});break;}
     case "nbsub":S.nb.subject=v||"";render();window.scrollTo(0,0);break;
@@ -1561,7 +1618,8 @@ document.addEventListener("click",async e=>{
     case "mchg":S.editMonth=v;render();break;
     case "mno":S.editMonth=null;render();break;
     case "msave":{const x=document.getElementById("mchgin"),p=S.packs.find(z=>z.id===v);if(!x||!p||!okMonth(x.value)){toast("Pick a valid month and year");break;}
-      const old=p.chunks||1;p.questions.forEach(q=>{q.mo=x.value;});S.editMonth=null;rebuild();render();await enqueue(()=>S.store.savePack(p,old));toast("Month set to "+monthLabel(x.value));break;}
+      const month=x.value,old=p.chunks||1,updated={...p,questions:p.questions.map(q=>({...q,mo:month}))};
+      await enqueue(()=>S.store.savePack(updated,old));S.packs=S.packs.map(z=>z===p?updated:z);S.editMonth=null;rebuild();render();toast("Month set to "+monthLabel(month));break;}
     case "heatall":S.heatAll=!S.heatAll;render();break;
     case "heat":{const s=el.dataset.s,t=el.dataset.t;sel.subjects=new Set([s]);sel.topics=t?new Set([topicKey(s,t)]):new Set();sel.which="prio";sel.pack="all";S.quiz=null;S.tab="practice";S.view="wiz";S.step=2;render();window.scrollTo(0,0);break;}
     case "copymd":{const md=mdFor(openMistakes());try{await navigator.clipboard.writeText(md);S.mdText="";toast("Mistakes copied as markdown");}catch(err){S.mdText=md;render();toast("Select the text and copy it");}break;}
@@ -1569,7 +1627,7 @@ document.addEventListener("click",async e=>{
     case "dup":{const d=S.imp.dups[Number(el.dataset.i)];if(d){d.choice=v;render();}break;}
     case "impadd":await applyImport(false);break;
     case "impattempt":await applyImport(true);break;
-    case "home":flush();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "home":flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "review":S.quiz.rv=0;render();window.scrollTo(0,0);break;
     case "rgoto":S.quiz.rv=Number(v);render();window.scrollTo(0,0);break;
     case "rprev":if(S.quiz.rv>0){S.quiz.rv--;render();window.scrollTo(0,0);}break;
@@ -1585,15 +1643,17 @@ document.addEventListener("click",async e=>{
     case "authgo":await authGo();break;
     case "magic":await authMagic();break;
     case "google":{const r=await S.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:authBack()}});if(r.error){S.authMsg={text:r.error.message,bad:1};render();}break;}
-    case "signout":flush();await chain;await S.sb.auth.signOut();break;
+    case "signout":await flush();await chain;await S.sb.auth.signOut();break;
     case "del":S.confirmDel=v;render();{const x=document.getElementById("delin");if(x)x.focus();}break;
     case "delno":S.confirmDel=null;render();break;
     case "delgo":{
       const x=document.getElementById("delin");if(!x||x.value.trim().toLowerCase()!=="delete")break;
-      const p=S.packs.find(z=>z.id===v);S.confirmDel=null;if(!p)break;
+      const p=S.packs.find(z=>z.id===v);if(!p)break;
+      await enqueue(()=>S.store.deletePack(p));S.confirmDel=null;
       S.packs=S.packs.filter(z=>z.id!==v);for(const k of Object.keys(S.prog))if(k.startsWith(v+":"))delete S.prog[k];
-      rebuild();render();await enqueue(()=>S.store.deletePack(p));toast("\""+p.title+"\" deleted");break;}
+      rebuild();render();toast("\""+p.title+"\" deleted");break;}
   }
+  }catch(err){toast("Action could not finish: "+((err&&err.message)||"unknown error")+". Please try again.");}
 });
 document.addEventListener("input",e=>{if(!e.target)return;if(e.target.id==="impname")S.imp.name=e.target.value;else if(e.target.id==="impmonth")S.imp.month=e.target.value;});
 document.addEventListener("change",e=>{
@@ -1633,13 +1693,14 @@ document.addEventListener("keydown",e=>{
 /* ---------- boot ---------- */
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("Could not load "+src));document.head.appendChild(s);});}
 async function openBank(store,mode){
-  S.store=store;S.storage=mode;
-  try{const d=await store.load();S.packs=d.packs;rebuild();applyProg(d.prog);}
-  catch(e){
-    if(mode==="account"){S.store=localBackend();S.storage="browser";try{const d=await S.store.load();S.packs=d.packs;rebuild();applyProg(d.prog);}catch(x){}toast("Could not reach your account storage. Using this browser.");}
-    else toast("Could not load your data: "+((e&&e.message)||"unknown error"));
+  S.store=null;S.storage=mode;S.ready=false;S.bankError="";S.bankRetry={store,mode};render();
+  try{
+    const d=await store.load();S.packs=d.packs;rebuild();applyProg(d.prog);
+    S.store=store;S.ready=true;S.bankRetry=null;
+  }catch(e){
+    S.bankError="Could not load your "+(mode==="cloud"||mode==="account"?"account":"browser")+" data: "+((e&&e.message)||"unknown error");
   }
-  S.ready=true;render();
+  render();
 }
 async function startCloud(user){
   S.user=user;S.auth="ok";S.authMsg=null;S.ready=false;render();
@@ -1647,6 +1708,7 @@ async function startCloud(user){
 }
 render();
 (async function boot(){
+  if(LOCAL_PREVIEW){S.auth="none";await openBank(localBackend("recall-desk-preview-v1"),"browser");return;}
   if(CONFIG.requireLogin&&!(CONFIG.supabaseUrl&&CONFIG.supabaseKey)){S.auth="setup";S.ready=true;render();return;}
   if(CONFIG.supabaseUrl&&CONFIG.supabaseKey){
     try{
