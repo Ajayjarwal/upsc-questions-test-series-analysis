@@ -484,6 +484,64 @@ details.nbq[open] .dots{display:none}
 :root[data-space="cse"] .review-text{white-space:normal;line-height:1.45}
 :root[data-space="cse"] .nbbody{gap:10px}
 :root[data-space="cse"] details.nbq>summary{gap:10px}
+
+/* CSE search and compact daily quote card. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.site-header{display:flex;flex-direction:column;gap:20px}
+.site-header-top{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.spaces-quote-row{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:24px;align-items:center}
+.quote-dock{position:relative;min-width:0;height:36px}
+/* The dock takes only the original tab-row height. The card uses the empty
+   header gaps above and below, so it does not move the main navigation. */
+.quote-card{position:absolute;right:0;top:50%;transform:translateY(-50%);width:100%;max-width:660px;margin:0;padding:6px 10px;border:1px solid var(--rule);border-radius:12px;background:var(--card);min-width:0}
+.quote-label{font-size:9px;line-height:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:600;display:block;margin-bottom:2px}
+.quote-copy{font-family:Georgia,"Times New Roman",serif;font-size:15px;font-style:italic;line-height:20px;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;padding-right:28px}
+.quote-bottom{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:8px}
+.quote-dock .quote-author{display:none}
+.quote-author{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.quote-edit{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--rule);border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;flex:none}
+.quote-edit:hover{border-color:var(--gold);color:var(--gold)}
+.quote-edit svg{width:13px;height:13px}
+.cse-page-title{display:flex;justify-content:space-between;gap:18px;align-items:center;flex-wrap:wrap}
+.search-launch{display:inline-flex;align-items:center;gap:9px}
+.search-launch svg{width:18px;height:18px}
+.search-box{padding:26px;gap:18px;background:linear-gradient(125deg,var(--gold-soft),var(--card) 65%)}
+.search-box h1{font-size:30px}
+.search-form{display:flex;gap:10px;align-items:center}
+.search-form input{flex:1;min-width:0}
+.search-form .btn{flex:none}
+.search-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.search-chips .chip{font-size:12px;padding:5px 11px;background:var(--card)}
+.search-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.search-controls label{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--muted)}
+.search-controls input{accent-color:var(--gold);width:16px;height:16px}
+.search-counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.search-result{display:flex;flex-direction:column;gap:12px;padding:22px;border:1px solid var(--rule);border-radius:18px;background:var(--card)}
+.search-result h3{font-size:18px;font-weight:500;line-height:1.5;white-space:pre-line;text-wrap:initial;overflow-wrap:anywhere}
+.search-result .match-note{font-size:12px;color:var(--muted)}
+.search-excerpt{font-size:14px;color:var(--muted);line-height:1.6;border-left:2px solid var(--gold-line);padding-left:12px;overflow-wrap:anywhere}
+.search-result mark{background:var(--gold-soft);color:var(--gold);border-radius:3px;padding:0 2px;font-weight:600}
+.search-answer{border-top:1px solid var(--rule);padding-top:12px}
+.search-answer summary{cursor:pointer;font-size:14px;color:var(--gold)}
+.search-answer-body{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.search-pagination{display:flex;justify-content:center;align-items:center;gap:15px}
+.quote-dialog{width:min(650px,calc(100% - 28px));max-height:85vh;padding:26px;color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:22px;overflow:auto}
+.quote-dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(4px)}
+.quote-editor-layout{display:flex;flex-direction:column;gap:18px}
+.quote-editor-layout h2{font-size:25px}
+.quote-editor-intro{font-size:14px;color:var(--muted)}
+.quote-entry{padding:15px;background:var(--card2);border:1px solid var(--rule);border-radius:14px;display:flex;flex-direction:column;gap:10px}
+.quote-entry textarea{font:italic 17px/1.5 Georgia,"Times New Roman",serif;min-height:90px;background:var(--card)}
+.quote-entry input{font-size:14px;background:var(--card)}
+.quote-list{display:flex;flex-direction:column;gap:12px}
+.quote-editor-footer{position:sticky;bottom:-26px;padding:16px 0;background:var(--card);border-top:1px solid var(--rule)}
+.quote-json-format{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card2);border-radius:10px;padding:12px;margin:10px 0 0}
+.quote-error{color:var(--bad);font-size:14px}
+.quote-error:empty{display:none}
+.quote-close{border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:22px}
+@media(max-width:780px){.spaces-quote-row{grid-template-columns:1fr;gap:20px}.quote-dock{height:auto}.quote-card{position:relative;top:auto;transform:none;max-width:none;padding:10px 12px}.quote-copy{display:block;overflow:visible;padding-right:28px}.site-header-top{flex-wrap:wrap}.search-box{padding:20px}.search-box h1{font-size:25px}}
+@media(max-width:480px){.search-form{flex-wrap:wrap}.search-form input{flex-basis:100%}.search-form .btn{width:100%}.search-result{padding:17px}.quote-dialog{padding:20px}.quote-editor-footer{bottom:-20px}.quote-editor-footer .row{gap:8px}.site-header-top .status{max-width:150px}}
+
 </style>
 </head>
 <body>
@@ -884,6 +942,180 @@ function solution(q){
 }
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
+/* ---------- CSE search and daily quotes ---------- */
+const QUOTES_KEY=LOCAL_PREVIEW?"solo-daily-quotes-preview-v1":"solo-daily-quotes-v1";
+const SEARCH_ICON='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>';
+const EDIT_ICON='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5M4 20l4-1 13-13-4-4L4 15z"/></svg>';
+const DEFAULT_QUOTES=[
+  {text:"One focused hour today is one less doubt on exam day.",author:"Study reminder"},
+  {text:"Return to what challenged you. That is where the learning begins.",author:"Study reminder"}
+];
+const RELATED_TOPICS=[
+  ["federalism","federal","federation","centre state relations","center state relations","state centre relations","state center relation","union state relations","inter state council","interstate council","cooperative federalism","fiscal federalism","seventh schedule","distribution of powers","sarkaria commission","punchhi commission"],
+  ["fundamental rights","right to equality","right to freedom","constitutional remedies","article 32","article 21","writs"],
+  ["parliament","parliamentary","lok sabha","rajya sabha","money bill","joint sitting","legislature"],
+  ["judiciary","judicial review","supreme court","high court","judicial independence"],
+  ["local government","local self government","panchayati raj","panchayat","municipality","municipalities","73rd amendment","74th amendment"],
+  ["monetary policy","repo rate","reverse repo","reserve bank","rbi","cash reserve ratio","bank rate","monetary policy committee"],
+  ["fiscal policy","fiscal deficit","revenue deficit","government borrowing","public debt","budget deficit"],
+  ["inflation","consumer price index","cpi","wholesale price index","wpi","price rise"],
+  ["climate change","global warming","greenhouse gases","carbon emissions","paris agreement","unfccc"],
+  ["biodiversity","biological diversity","species diversity","biodiversity hotspot","endemic species"],
+  ["agriculture","farming","crop cultivation","minimum support price","msp","irrigation"],
+  ["buddhism","buddhist","buddha","four noble truths","eightfold path"],
+  ["jainism","jain","jaina","jainas","mahavira","tirthankara","tirthankaras","anekantavada"],
+  ["bhakti movement","bhakti","devotional movement","kabir","alvars","nayanars"],
+  ["sufism","sufi","sufis","sufi movement","chisti","chishti","silsila","silsilah"],
+  ["sikhism","sikh","sikhs","guru nanak","guru granth sahib","khalsa"],
+  ["plate tectonics","continental drift","tectonic plates","subduction","sea floor spreading"],
+  ["ocean currents","oceanic circulation","thermohaline circulation","gulf stream","el nino","la nina"]
+];
+// Broad queries expand downwards. Searching Buddhism must not pull in every
+// other religion merely because they share the same umbrella category.
+const TOPIC_FAMILIES=[{
+  aliases:["religion","religions","religious","faith","faiths","religious traditions","religious movements","indian religions","religion in india"],
+  terms:["religion","religions","religious","faith","faiths","buddhism","buddhist","buddha","four noble truths","eightfold path","jainism","jain","jaina","jainas","mahavira","tirthankara","tirthankaras","anekantavada","hinduism","hindu","vedic","vedas","upanishads","shaivism","vaishnavism","shaktism","islam","islamic","sufism","sufi","sufis","silsila","silsilah","chishti","chisti","bhakti","kabir","alvars","nayanars","sikhism","sikh","guru nanak","guru granth sahib","khalsa","christianity","christian","zoroastrianism","zoroastrian","judaism","jewish"]
+}];
+const CSE_SEARCH={draft:"",query:"",related:true,page:1};
+function searchNormalize(value){
+  return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim().split(/\s+/).map(w=>w==="center"?"centre":w==="relations"?"relation":w==="states"?"state":w==="centres"?"centre":w).join(" ");
+}
+function hasSearchPhrase(text,phrase){return !!phrase&&(" "+text+" ").includes(" "+phrase+" ");}
+function searchPlan(query,related=true){
+  const phrase=searchNormalize(query),tokens=[...new Set(phrase.split(" ").filter(Boolean))];
+  const groups=related?RELATED_TOPICS.filter(g=>g.some(alias=>searchNormalize(alias)===phrase)):[];
+  const families=related?TOPIC_FAMILIES.filter(f=>f.aliases.some(alias=>searchNormalize(alias)===phrase)):[];
+  const aliases=[...new Set([...groups.flat(),...families.flatMap(f=>f.terms)].map(searchNormalize))].filter(a=>a!==phrase);
+  return {phrase,tokens,aliases};
+}
+function cseSearch(query,related=true){
+  if(S.space!=="cse")return [];
+  const plan=searchPlan(query,related);if(!plan.tokens.length)return [];
+  return S.qs.flatMap(q=>{
+    const fields=[{name:"Question",value:q.text},{name:"Options",value:Object.values(q.options||{}).join(" ")},{name:"Solution",value:[q.exp,q.sum].filter(Boolean).join("\n")}].map(f=>({...f,normal:searchNormalize(f.value)}));
+    const directFields=fields.filter(f=>plan.tokens.every(t=>hasSearchPhrase(f.normal,t)));
+    const labels=[{name:"Topic label",value:q.topic},{name:"Subject label",value:q.subject}].map(f=>({...f,normal:searchNormalize(f.value)}));
+    const relatedCandidates=[...fields,...labels];
+    const relatedFields=related?relatedCandidates.filter(f=>plan.aliases.some(a=>hasSearchPhrase(f.normal,a))||(labels.includes(f)&&hasSearchPhrase(f.normal,plan.phrase))):[];
+    if(!directFields.length&&!relatedFields.length)return [];
+    const direct=!!directFields.length,matched=direct?directFields:relatedFields;
+    const terms=direct?plan.tokens:[...new Set([...plan.aliases,plan.phrase].filter(a=>relatedFields.some(f=>hasSearchPhrase(f.normal,a))))];
+    const score=(direct?1000:0)+(directFields.some(f=>hasSearchPhrase(f.normal,plan.phrase))?100:0)+(matched.some(f=>f.name==="Question")?30:matched.some(f=>f.name==="Options")?20:10);
+    return [{q,direct,fields:matched.map(f=>f.name),terms,score,excerpt:matched.find(f=>f.name==="Solution")?.value||""}];
+  }).sort((a,b)=>b.score-a.score||(Number(b.q.year)||0)-(Number(a.q.year)||0)||a.q.no-b.q.no);
+}
+function searchHighlight(value,terms){
+  // Locate normalized whole words, then escape the original text around marks.
+  const text=String(value||""),words=[...text.matchAll(/[\p{L}\p{N}]+/gu)];
+  const normals=words.map(w=>searchNormalize(w[0])),ranges=[];
+  for(const term of terms){const parts=term.split(" ");for(let i=0;i<=words.length-parts.length;i++){
+    if(parts.every((p,j)=>normals[i+j]===p))ranges.push([words[i].index,words[i+parts.length-1].index+words[i+parts.length-1][0].length]);
+  }}
+  ranges.sort((a,b)=>a[0]-b[0]);const merged=[];
+  for(const r of ranges){const last=merged[merged.length-1];if(last&&r[0]<=last[1])last[1]=Math.max(last[1],r[1]);else merged.push([...r]);}
+  let out="",at=0;for(const [start,end] of merged){out+=esc(text.slice(at,start))+"<mark>"+esc(text.slice(start,end))+"</mark>";at=end;}return out+esc(text.slice(at));
+}
+function searchExcerpt(text,terms){
+  const words=[...String(text).matchAll(/[\p{L}\p{N}]+/gu)];
+  const termWords=new Set(terms.flatMap(t=>t.split(" "))),hit=words.find(w=>termWords.has(searchNormalize(w[0])));
+  const start=Math.max(0,(hit?.index||0)-90),end=Math.min(text.length,start+360);
+  return (start?"…":"")+text.slice(start,end)+(end<text.length?"…":"");
+}
+function searchResult(row){
+  const {q,direct,fields,terms,excerpt}=row,pack=S.packs.find(p=>p.id===q.packId);
+  return `<article class="search-result"><div class="row sp"><div class="qmeta"><span class="tag">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}</div><span class="tag${direct?"":" plain"}">${direct?"Keyword match":"Related topic"}</span></div>
+    <p class="match-note">${esc(pack?.title||"Imported set")} · Q${q.no} · Found in ${esc(fields.join(" + ").toLowerCase())}</p>
+    <h3>${searchHighlight(questionDisplayText(q.text),terms)}</h3>
+    ${excerpt?`<p class="search-excerpt"><strong>Solution excerpt</strong><br>${searchHighlight(searchExcerpt(excerpt,terms),terms)}</p>`:""}
+    ${!direct?`<p class="match-note">Related terms found: ${esc(terms.join(", "))}</p>`:""}
+    <details class="search-answer"><summary>View options, answer &amp; full solution</summary><div class="search-answer-body">${figs(q.qimg)}${Object.entries(q.options).map(([key,value])=>`<p><strong>${esc(key)}.</strong> ${searchHighlight(value,terms)}</p>`).join("")}<p class="gold">Accepted answer: ${esc(acceptedAnswers(q).join(" or "))}</p>${solution(q)||`<p class="hint">No solution was included in this import.</p>`}</div></details></article>`;
+}
+function viewCseSearch(){
+  const {query,related,page}=CSE_SEARCH,rows=cseSearch(query,related),exact=rows.filter(r=>r.direct).length,relatedCount=rows.length-exact;
+  const size=12,pages=Math.max(1,Math.ceil(rows.length/size)),current=Math.min(page,pages),plan=searchPlan(query,related);
+  return `<button class="backlink" data-feature-act="search-back">← Back to CSE Practice</button>
+    <section class="card search-box"><div class="row sp"><span class="label gold">Explore your CSE question bank</span>${SEARCH_ICON}</div><h1>Has this topic appeared before?</h1><p class="muted">Find words and related topics in your imported questions, options and solutions.</p>
+    <form id="cse-search-form" class="search-form" role="search"><label class="sr-only" for="cse-search-input">Search CSE questions</label><input class="txt" id="cse-search-input" type="search" maxlength="160" value="${esc(CSE_SEARCH.draft)}" placeholder="Try federalism, inflation, Buddhism…" autocomplete="off"><button class="btn pri" type="submit">Search questions</button></form>
+    <div class="search-controls"><label><input id="search-related" type="checkbox" ${related?"checked":""}> Include related topics</label><span class="hint">Questions + options + solutions</span></div>
+    <div class="search-chips"><span class="hint">Try</span>${["Federalism","Religion","Monetary policy","Biodiversity"].map(t=>`<button class="chip" data-feature-act="search-suggestion" data-value="${esc(t)}">${esc(t)}</button>`).join("")}</div></section>
+    ${query?`<div class="field" style="gap:8px" role="status"><div class="row sp"><h2>${rows.length} result${rows.length===1?"":"s"} for “${esc(query)}”</h2><span class="hint">${S.qs.length} CSE questions searched</span></div><div class="search-counts"><span class="tag">${exact} keyword match${exact===1?"":"es"}</span>${related?`<span class="tag plain">${relatedCount} related-topic match${relatedCount===1?"":"es"}</span>`:""}</div>${plan.aliases.length?`<p class="hint">Also looking for: ${esc(plan.aliases.slice(0,6).join(", "))}${plan.aliases.length>6?"…":""}</p>`:""}</div>`:`<section class="card flat"><h2>Follow a topic across papers</h2><p class="muted">Search “federalism” to find direct mentions, plus related terms such as Centre–State relations and the Seventh Schedule.</p></section>`}
+    ${query&&!rows.length?`<section class="card flat"><h2>No matching questions in this bank</h2><p class="muted">Try a shorter keyword or import more CSE papers. No match here does not mean a topic has never appeared in UPSC.</p></section>`:""}
+    ${rows.slice((current-1)*size,current*size).map(searchResult).join("")}
+    ${pages>1?`<nav class="search-pagination" aria-label="Search result pages"><button class="btn sm" data-feature-act="search-page" data-value="${current-1}" ${current===1?"disabled":""}>Previous</button><span class="hint">${current} / ${pages}</span><button class="btn sm" data-feature-act="search-page" data-value="${current+1}" ${current===pages?"disabled":""}>Next</button></nav>`:""}
+    <details class="card flat"><summary class="hint">How are related topics matched?</summary><p class="hint">Keyword matches look for all your search words within question text, options or a solution. Related matching also checks topic and subject labels, plus a curated dictionary: for example, religion includes Buddhism, Jainism, Bhakti and Sufism. Broad categories expand to their subtopics; a narrow Buddhism search stays focused on Buddhism. This is dictionary-based matching, not an AI understanding of every topic.${query&&related&&!plan.aliases.length?" This search has no dictionary expansion; only your words and matching topic labels are being checked.":""}</p></details>
+    <p class="hint">Results cover your imports only. No result does not prove a topic has never appeared in UPSC. Browsing results does not record an attempt.</p>`;
+}
+function parseQuoteJson(text){
+  const data=JSON.parse(text),list=Array.isArray(data)?data:data&&data.quotes;
+  if(!Array.isArray(list)||!list.length||list.length>500)throw Error("Use a list of 1–500 quotes, or an object with a quotes list.");
+  return list.map((row,i)=>{
+    const quote=typeof row==="string"?row:row&&typeof row==="object"?(row.text??row.quote):null;
+    const author=typeof row==="string"?"":row?.author??"";
+    if(typeof quote!=="string"||!quote.trim()||quote.length>2000||typeof author!=="string"||author.length>160)throw Error("Quote "+(i+1)+" needs text (up to 2,000 characters) and an optional author (up to 160).");
+    return {text:quote.trim(),author:author.trim()};
+  });
+}
+let dailyQuotes=(()=>{try{const raw=localStorage.getItem(QUOTES_KEY);return raw?parseQuoteJson(raw):structuredClone(DEFAULT_QUOTES);}catch(e){return structuredClone(DEFAULT_QUOTES);}})();
+function quoteForDay(quotes,date=new Date()){
+  const day=Math.floor(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())/86400000);
+  return quotes[((day%quotes.length)+quotes.length)%quotes.length];
+}
+function quoteCard(){
+  const quote=quoteForDay(dailyQuotes);
+  return `<aside class="quote-card" aria-label="Quote of the day" title="${esc(quote.text+(quote.author?' — '+quote.author:''))}"><span class="quote-label">Quote of the day</span><p class="quote-copy"><em>“${esc(quote.text)}”</em></p><div class="quote-bottom">${quote.author?`<span class="quote-author">— ${esc(quote.author)}</span>`:""}<button class="quote-edit" data-feature-act="quote-edit" aria-label="Edit quote collection" title="Edit all quotes">${EDIT_ICON}</button></div></aside>`;
+}
+let quoteDraft=[],quoteTrigger=null;
+function quoteEntry(q,i){return `<section class="quote-entry"><div class="row sp"><label class="label" for="quote-text-${i}">Quote ${i+1}</label><button type="button" class="linkbtn" data-feature-act="quote-remove" data-value="${i}" aria-label="Remove quote ${i+1}">Remove</button></div><textarea id="quote-text-${i}" data-quote-text="${i}" maxlength="2000" aria-label="Quote ${i+1} text">${esc(q.text)}</textarea><input class="txt" data-quote-author="${i}" maxlength="160" value="${esc(q.author)}" placeholder="Author (optional)" aria-label="Quote ${i+1} author"></section>`;}
+function drawQuoteEditor(){
+  const dialog=document.getElementById("quote-dialog");
+  dialog.innerHTML=`<form id="quote-editor-form" class="quote-editor-layout"><div class="row sp"><h2 id="quote-editor-title">Your daily quotes</h2><button type="button" class="quote-close" data-feature-act="quote-cancel" aria-label="Close quote editor">×</button></div><p class="quote-editor-intro">One quote each day, rotating through your collection. Edit any quote or import your own JSON file.</p><div class="row"><button type="button" class="btn sm" data-feature-act="quote-import">Import JSON</button><button type="button" class="btn sm" data-feature-act="quote-add">+ Add quote</button><span class="hint">${quoteDraft.length} quote${quoteDraft.length===1?"":"s"}</span></div><input type="file" id="quote-json-file" accept=".json,application/json" hidden><p id="quote-error" class="quote-error" role="alert"></p><div class="quote-list">${quoteDraft.map(quoteEntry).join("")||`<p class="muted">Add at least one quote before saving.</p>`}</div><details><summary class="hint">Supported JSON format</summary><pre class="quote-json-format">${esc(JSON.stringify({quotes:[{text:"Your quote here",author:"Author name"}]},null,2))}</pre><p class="hint" style="margin-top:8px">A list of plain quote strings also works. Import replaces this draft collection; Save applies it.</p></details><footer class="quote-editor-footer"><div class="row sp"><span class="hint">Saved in this browser only</span><div class="row"><button type="button" class="btn sm" data-feature-act="quote-cancel">Cancel</button><button type="submit" class="btn pri sm">Save quotes</button></div></div></footer></form>`;
+}
+function ensureQuoteDialog(){
+  if(document.getElementById("quote-dialog"))return;
+  const dialog=document.createElement("dialog");dialog.id="quote-dialog";dialog.className="quote-dialog";dialog.setAttribute("aria-labelledby","quote-editor-title");document.body.appendChild(dialog);
+  dialog.addEventListener("cancel",()=>{quoteDraft=[];});
+}
+function openQuoteEditor(trigger){
+  ensureQuoteDialog();quoteDraft=structuredClone(dailyQuotes);quoteTrigger=trigger;drawQuoteEditor();document.getElementById("quote-dialog").showModal();
+}
+function closeQuoteEditor(){document.getElementById("quote-dialog").close();quoteTrigger?.focus();}
+function runCseSearch(value){CSE_SEARCH.query=String(value).trim().slice(0,160);CSE_SEARCH.draft=CSE_SEARCH.query;CSE_SEARCH.page=1;render();}
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-feature-act]");if(!el)return;
+  switch(el.dataset.featureAct){
+    case "search-open":if(S.space!=="cse")return;S.view="search";S.tab="practice";S.quiz=null;render();document.getElementById("cse-search-input").focus();window.scrollTo(0,0);break;
+    case "search-back":S.view="home";render();window.scrollTo(0,0);break;
+    case "search-suggestion":runCseSearch(el.dataset.value);break;
+    case "search-page":CSE_SEARCH.page=Number(el.dataset.value);render();document.getElementById("cse-search-form").scrollIntoView({block:"start"});break;
+    case "quote-edit":openQuoteEditor(el);break;
+    case "quote-cancel":closeQuoteEditor();break;
+    case "quote-add":if(quoteDraft.length>=500){document.getElementById("quote-error").textContent="The collection can contain up to 500 quotes.";break;}quoteDraft.push({text:"",author:""});drawQuoteEditor();document.getElementById("quote-text-"+(quoteDraft.length-1)).focus();break;
+    case "quote-remove":quoteDraft.splice(Number(el.dataset.value),1);drawQuoteEditor();break;
+    case "quote-import":document.getElementById("quote-json-file").click();break;
+  }
+});
+document.addEventListener("input",e=>{
+  if(e.target.id==="cse-search-input")CSE_SEARCH.draft=e.target.value;
+  if(e.target.dataset&&Object.hasOwn(e.target.dataset,"quoteText"))quoteDraft[Number(e.target.dataset.quoteText)].text=e.target.value;
+  if(e.target.dataset&&Object.hasOwn(e.target.dataset,"quoteAuthor"))quoteDraft[Number(e.target.dataset.quoteAuthor)].author=e.target.value;
+});
+document.addEventListener("change",async e=>{
+  if(e.target.id==="search-related"){CSE_SEARCH.related=e.target.checked;CSE_SEARCH.page=1;render();}
+  if(e.target.id!=="quote-json-file")return;
+  const file=e.target.files?.[0];if(!file)return;
+  try{if(file.size>1048576)throw Error("Choose a JSON file smaller than 1 MB.");const imported=parseQuoteJson(await file.text());if(!document.getElementById("quote-dialog").open)return;quoteDraft=imported;drawQuoteEditor();}
+  catch(err){document.getElementById("quote-error").textContent=err instanceof SyntaxError?"This file is not valid JSON. Your saved quotes have not changed.":err.message;}
+});
+document.addEventListener("submit",e=>{
+  if(e.target.id==="cse-search-form"){e.preventDefault();if(S.space==="cse")runCseSearch(document.getElementById("cse-search-input").value);}
+  if(e.target.id==="quote-editor-form"){
+    e.preventDefault();try{const valid=parseQuoteJson(JSON.stringify(quoteDraft));localStorage.setItem(QUOTES_KEY,JSON.stringify(valid));dailyQuotes=valid;closeQuoteEditor();render();document.querySelector('[data-feature-act="quote-edit"]')?.focus();toast("Quote collection saved in this browser");}
+    catch(err){document.getElementById("quote-error").textContent=err.message;}
+  }
+});
+// Refresh the daily card after midnight when the page becomes visible again.
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!document.getElementById("quote-dialog")?.open&&!S.quiz){const card=document.querySelector(".quote-card");if(card)card.outerHTML=quoteCard();}});
+
 /* ---------- view helpers ---------- */
 const SUN=`<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 const MOON=`<svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
@@ -892,9 +1124,10 @@ function header(){
   const open=openMistakes().length;
   const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
   const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
-  return `<div class="row sp"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
-  <div class="spaces" role="tablist" aria-label="Question space">${Object.entries(SPACES).map(([k,space])=>[k,space.label]).map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div>
-  <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav>`;
+  return `<header class="site-header"><div class="site-header-top"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
+  <div class="spaces-quote-row">
+  <div class="spaces" role="tablist" aria-label="Question space">${Object.entries(SPACES).map(([k,space])=>[k,space.label]).map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div><div class="quote-dock">${quoteCard()}</div></div>
+  <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav></header>`;
 }
 function emptyBank(){
   return `<section class="card"><h2>${isExamSpace()?`Your ${spaceName()} PYQ bank is empty`:"Your question bank is empty"}</h2>
@@ -988,7 +1221,7 @@ function viewHome(){
   const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
   const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length;
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
-  return `<div class="field" style="gap:6px"><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>
+  return `<div class="cse-page-title"><div class="field" style="gap:6px"><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>${S.space==="cse"?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:""}</div>
   ${has?"":emptyBank()}
   ${has?dailyCard()+performanceCard():""}
   ${isExamSpace()?"":unattemptedCard()}
@@ -1463,7 +1696,7 @@ function render(){
   if(S.bankError){app.innerHTML=`<section class="card"><h2>Could not open your question bank</h2><p class="muted">${esc(S.bankError)}</p><p>Your question bank is unavailable until loading succeeds. Please retry.</p><div><button class="btn pri" data-act="retrybank">Retry</button></div></section>`;return;}
   let body;
   if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
-  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
+  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="search"&&S.space==="cse"?viewCseSearch():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
   else if(S.tab==="marks")body=viewMarks();
@@ -1842,6 +2075,7 @@ document.addEventListener("change",e=>{
   else if(d==="custom"){tgt().custom=Math.max(1,Math.min(200,parseInt(e.target.value,10)||1));render();}
 });
 document.addEventListener("keydown",e=>{
+  if(document.getElementById("quote-dialog")?.open)return;
   if(S.auth==="login"&&e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){authGo();e.preventDefault();return;}
   const Q=S.quiz;
   if(!Q&&S.tab==="practice"&&S.view==="tr"&&S.tr){
