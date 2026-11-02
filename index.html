@@ -46,6 +46,15 @@ svg.ic{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;str
 .icon{width:46px;height:46px;border-radius:14px;background:var(--gold-soft);border:1px solid var(--gold-line);color:var(--gold);display:grid;place-items:center;flex:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .row.sp{justify-content:space-between}
+.daily-revision{padding:16px 18px;gap:10px}
+.daily-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.daily-heading h2{font-size:20px}
+.daily-message{font-size:14px;line-height:1.45}
+.daily-footer{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.daily-progress{flex:1;min-width:min(240px,100%);display:flex;flex-direction:column;gap:6px}
+.daily-progress .hint{font-size:12px}
+.daily-progress .bar{flex:none;height:6px}
+.daily-revision .daily-caption{font-size:12px;line-height:1.4}
 .btn{padding:11px 22px;border-radius:999px;border:1px solid var(--rule);background:transparent;font-weight:600;font-size:15px;cursor:pointer;color:var(--ink)}
 .btn:hover:not(:disabled){border-color:var(--gold)}
 .btn.pri{background:var(--pill);color:var(--pill-ink);border-color:var(--pill)}
@@ -750,11 +759,11 @@ function startDailyReview(){
 }
 function dailyCard(){
   const plan=dailyPlan(),n=plan.items.length;
-  const message=n?`${n} questions ready. Overdue reviews come first, then mistakes and uncertain answers. Topics are mixed.`:plan.done>=DUE_CAP?"Today's revision goal is complete. More reviews will be ready tomorrow.":plan.done?"Today's queue is complete. Return tomorrow for your next review.":"Nothing needs revision yet. Attempt some questions; reviews will appear here on a later day.";
-  return `<section class="card"><div class="row sp"><div><span class="label">${esc(spaceName())}</span><h2>Daily revision</h2></div><span class="tag plain">Up to ${DUE_CAP} a day</span></div><p>${message}</p>
-  <div class="row sp"><span class="hint">${plan.done} / ${plan.target} done today · answered or explicitly skipped</span>${plan.later?`<span class="hint">${plan.later} more waiting for another day</span>`:""}</div>
+  const message=n?`${n} question${n===1?"":"s"} ready. Overdue reviews come first, then mistakes and uncertain answers. Topics are mixed.`:plan.done>=DUE_CAP?"Today's revision goal is complete. More reviews will be ready tomorrow.":plan.done?"Today's queue is complete. Return tomorrow for your next review.":"Nothing needs revision yet. Attempt some questions; reviews will appear here on a later day.";
+  return `<section class="card daily-revision"><div class="row sp"><div class="daily-heading"><h2>Daily revision</h2><span class="label">${esc(spaceName())}</span></div><span class="tag plain">Up to ${DUE_CAP} a day</span></div><p class="daily-message">${message}</p>
+  <div class="daily-footer"><div class="daily-progress"><div class="row sp"><span class="hint">${plan.done} / ${plan.target} done today · answered or explicitly skipped</span>${plan.later?`<span class="hint">${plan.later} more waiting for another day</span>`:""}</div>
   <div class="bar" role="progressbar" aria-label="Daily revision progress" aria-valuemin="0" aria-valuemax="${Math.max(1,plan.target)}" aria-valuenow="${Math.min(plan.done,Math.max(1,plan.target))}"><b style="width:${plan.target?Math.min(100,Math.round(plan.done/plan.target*100)):0}%"></b></div>
-  <div class="row"><button class="btn pri" data-act="dailygo" ${n?"":"disabled"}>${plan.done?"Continue":"Start"} revision${n?` (${n})`:""}</button><button class="btn" data-act="dailyopen">View queue</button></div><p class="hint">Questions practised today stay out of this queue until a later day. Completing a review does not mean the concept is mastered.</p></section>`;
+  </div><div class="row"><button class="btn pri sm" data-act="dailygo" ${n?"":"disabled"}>${plan.done?"Continue":"Start"} revision${n?` (${n})`:""}</button><button class="btn sm" data-act="dailyopen">View queue</button></div></div><p class="hint daily-caption">Questions practised today stay out of this queue until a later day. Completing a review does not mean the concept is mastered.</p></section>`;
 }
 function viewDaily(){
   const plan=dailyPlan();
@@ -1223,7 +1232,7 @@ function viewHome(){
   const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
   return `<div class="cse-page-title"><div class="field" style="gap:6px"><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>${S.space==="cse"?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:""}</div>
   ${has?"":emptyBank()}
-  ${has?dailyCard()+performanceCard():""}
+  ${has?dailyCard():""}
   ${isExamSpace()?"":unattemptedCard()}
   <div class="grid2">
     <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
@@ -1234,6 +1243,7 @@ function viewHome(){
     <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
     <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>
   </div>
+  ${has?performanceCard():""}
   ${isExamSpace()?pyqYearsCard():testsCard()}`;
 }
 function topicGroups(o,g,subjects){
