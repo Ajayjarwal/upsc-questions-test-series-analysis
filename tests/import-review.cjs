@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const test = require('node:test');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
 new vm.Script(source);
 function app() {
   const events={};

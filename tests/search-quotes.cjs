@@ -3,8 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script=fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
 const core=script.slice(0,script.lastIndexOf('\nrender();'));
 const demoSource=String.raw`function previewDemoPacks(){
   const common={subject:"Indian Polity and Governance",answer:"A",options:{A:"Statement 1 only",B:"Statement 2 only",C:"Both statements",D:"Neither statement"}};
@@ -76,11 +75,11 @@ test('daily quote remains stable within local day and rotates next day',()=>{
   const run=fixture();assert.equal(run(`(()=>{const quotes=[{text:'A'},{text:'B'},{text:'C'}];const a=quoteForDay(quotes,new Date(2026,10,2,0,1)),b=quoteForDay(quotes,new Date(2026,10,2,23,59)),c=quoteForDay(quotes,new Date(2026,10,3,0,1));return a===b&&b!==c})()`),true);
 });
 test('production preserves authentication and contains no demo seeding',()=>{
-  assert.ok(html.includes('async function boot()'));
-  assert.ok(html.includes('CONFIG.requireLogin'));
-  assert.ok(!html.includes('previewDemoPacks'));
-  assert.ok(!html.includes('cse::design-demo'));
-  assert.ok(!html.includes('Design preview · sample data'));
-  assert.ok(html.includes('solo-daily-quotes-preview-v1'));
-  assert.ok(html.includes('solo-daily-quotes-v1'));
+  assert.ok(script.includes('async function boot()'));
+  assert.ok(script.includes('CONFIG.requireLogin'));
+  assert.ok(!script.includes('previewDemoPacks'));
+  assert.ok(!script.includes('cse::design-demo'));
+  assert.ok(!script.includes('Design preview · sample data'));
+  assert.ok(script.includes('solo-daily-quotes-preview-v1'));
+  assert.ok(script.includes('solo-daily-quotes-v1'));
 });
