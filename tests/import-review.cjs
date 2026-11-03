@@ -108,9 +108,9 @@ test('daily queue excludes fresh questions and anything practised today', () => 
   const run=app();
   assert.equal(run(`(()=>{const today=dayKey();return dailyReason({a:0,sk:0})===null&&dailyReason({a:1,l:'w',cf:'s',t:Date.now(),dd:today})===null&&dailyReason({a:1,l:'w',cf:'s',dr:today,t:1})===null&&dailyReason({a:1,l:'c',cf:'h',t:1,dd:addDays(today,2)}).label==='Correct with uncertainty'})()`),true);
 });
-test('daily queue caps daily work, deduplicates categories and retains overflow', () => {
+test('daily queue caps work at 10 in all spaces, deduplicates and retains overflow', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs=[{id:'old',questions:Array.from({length:40},(_,i)=>({...question,no:i+1}))}];rebuild();S.prog={};for(const q of S.qs)S.prog[q.uid]={a:1,w:3,m:1,l:'w',cf:'s',t:1};S.prog['old:1'].dr=dayKey();S.prog['old:2'].dr=dayKey();const plan=dailyPlan();return plan.done===2&&plan.target===25&&plan.items.length===23&&plan.later===15&&new Set(plan.items.map(x=>x.q.uid)).size===23})()`),true);
+  assert.equal(run(`Object.keys(SPACES).every(space=>{S.space=space;const id=scopedPackId('limit-check');S.packs=[{id,questions:Array.from({length:40},(_,i)=>({...question,no:i+1}))}];rebuild();S.prog={};for(const q of S.qs)S.prog[q.uid]={a:1,w:3,m:1,l:'w',cf:'s',t:1};S.prog[id+':1'].dr=dayKey();S.prog[id+':2'].dr=dayKey();const plan=dailyPlan();if(!(plan.done===2&&plan.target===10&&plan.items.length===8&&plan.later===30&&new Set(plan.items.map(x=>x.q.uid)).size===8))return false;for(let no=3;no<=10;no++)S.prog[id+':'+no].dr=dayKey();const complete=dailyPlan();return complete.done===10&&complete.target===10&&complete.items.length===0&&complete.later===30})`),true);
 });
 test('daily answers and explicit skips count once and persist with normal progress', async () => {
   const run=app();

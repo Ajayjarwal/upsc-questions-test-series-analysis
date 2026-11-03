@@ -146,7 +146,7 @@ function itemsFor(pid){
 }
 const dayKey=t=>{const d=t?new Date(t):new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
 const addDays=(k,n)=>{const a=k.split("-").map(Number);return dayKey(new Date(a[0],a[1]-1,a[2]+n).getTime());};
-const BOX_DAYS=[0,1,2,4,8,16],SLOW_S=90,CLEAR_DAYS=3,DUE_CAP=25;
+const BOX_DAYS=[0,1,2,4,8,16],SLOW_S=90,CLEAR_DAYS=3,DUE_CAP=10;
 const CONF={s:"Sure",h:"50-50",g:"Guess"},WHY={k:"Didn't know",c:"Confused options",m:"Misread",s:"Silly mistake"};
 const dueDay=p=>{if(!p||(!p.a&&!p.sk))return null;return p.dd||addDays(dayKey(p.t||Date.now()),p.a&&p.l==="c"?2:1);};
 const Z2=1.28*1.28,wilsonAcc=(ok,n)=>n?(ok/n+Z2/(2*n))/(1+Z2/n):0.5;
