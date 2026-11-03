@@ -18,6 +18,7 @@ const IC={
   notebook:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M3 7h4M3 11h4M3 15h4M3 19h4m5-8 5-5 2 2-5 5-3 1z"/>',
   book:'<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
   mark:'<path d="M7 4h10a1 1 0 0 1 1 1v16l-6-4-6 4V5a1 1 0 0 1 1-1z"/>',
+  flag:'<path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0"/>',
   heat:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>'
 };
@@ -751,18 +752,26 @@ function palState(Q,uid){
   return r.skipped?"skip":r.ok?"ok":"bad";
 }
 const answeredCount=Q=>Q.uids.filter(u=>Q.mode==="exam"?Q.ans[u]:(Q.res[u]&&!Q.res[u].skipped)).length;
+const markedCount=Q=>Q.uids.filter(u=>Q.marked?.[u]).length;
+const paletteMark=(Q,u)=>Q.marked?.[u]?`<span class="review-marker" aria-hidden="true">${ic("flag")}</span>`:"";
+function reviewMarkButton(Q,uid){
+  const marked=!!Q.marked?.[uid];
+  return `<button class="bm mark-review" data-act="markreview" aria-pressed="${marked}">${ic("flag")}${marked?"Marked for review":"Mark for review"}</button>`;
+}
 function palette(Q){
-  const exam=Q.mode==="exam",done=answeredCount(Q),left=Q.uids.length-done;
+  const exam=Q.mode==="exam",done=answeredCount(Q),left=Q.uids.length-done,marked=markedCount(Q);
   return `<aside class="card pal"><div><strong>Question palette · ${exam?"Exam":"Practice"}</strong>
   <div class="pcount"><span class="g">Answered (${done})</span><span class="r">Unanswered (${left})</span></div></div>
-  <div class="pgrid">${Q.uids.map((u,k)=>`<button class="pn ${palState(Q,u)}${k===Q.i?" cur":""}" data-act="goto" data-v="${k}" aria-label="Question ${k+1}" ${k===Q.i?'aria-current="true"':""}>${k+1}</button>`).join("")}</div>
-  <div class="plegend"><span><i class="cur"></i>Current</span>${exam?`<span><i class="ans"></i>Answered</span><span><i class="skip"></i>Skipped</span>`:`<span><i class="ok"></i>Correct</span><span><i class="bad"></i>Incorrect</span><span><i class="skip"></i>Skipped</span><span><i class="un"></i>Not attempted</span>`}</div>
+  <div class="pgrid">${Q.uids.map((u,k)=>`<button class="pn ${palState(Q,u)}${Q.marked?.[u]?" marked":""}${k===Q.i?" cur":""}" data-act="goto" data-v="${k}" aria-label="Question ${k+1}${Q.marked?.[u]?", marked for review":""}" ${k===Q.i?'aria-current="true"':""}>${k+1}${paletteMark(Q,u)}</button>`).join("")}</div>
+  <div class="plegend"><span><i class="cur"></i>Current</span>${exam?`<span><i class="ans"></i>Answered</span><span><i class="skip"></i>Skipped</span>`:`<span><i class="ok"></i>Correct</span><span><i class="bad"></i>Incorrect</span><span><i class="skip"></i>Skipped</span><span><i class="un"></i>Not attempted</span>`}<span><i class="review-key"></i>Marked for review</span></div>
+  <button class="btn sm review-jump" data-act="reviewmarked" ${marked?"":"disabled"}>Go to marked (${marked})</button><p class="hint">Review marks last for this attempt.</p>
   <button class="btn full" data-act="finish">${exam?"Submit now":"End session"}</button></aside>`;
 }
 function reviewPalette(Q){
   return `<aside class="card pal"><div><strong>Question palette · Review</strong></div>
-  <div class="pgrid">${Q.uids.map((u,k)=>{const r=Q.res[u],st=r.skipped?"":r.ok?"ok":"bad";return `<button class="pn ${st}${k===Q.rv?" cur":""}" data-act="rgoto" data-v="${k}" aria-label="Question ${k+1}" ${k===Q.rv?'aria-current="true"':""}>${k+1}</button>`;}).join("")}</div>
-  <div class="plegend"><span><i class="cur"></i>Current</span><span><i class="ok"></i>Correct</span><span><i class="bad"></i>Incorrect</span><span><i class="un"></i>Skipped</span></div>
+  <div class="pgrid">${Q.uids.map((u,k)=>{const r=Q.res[u],st=r.skipped?"":r.ok?"ok":"bad";return `<button class="pn ${st}${Q.marked?.[u]?" marked":""}${k===Q.rv?" cur":""}" data-act="rgoto" data-v="${k}" aria-label="Question ${k+1}${Q.marked?.[u]?", marked for review":""}" ${k===Q.rv?'aria-current="true"':""}>${k+1}${paletteMark(Q,u)}</button>`;}).join("")}</div>
+  <div class="plegend"><span><i class="cur"></i>Current</span><span><i class="ok"></i>Correct</span><span><i class="bad"></i>Incorrect</span><span><i class="un"></i>Skipped</span><span><i class="review-key"></i>Marked for review</span></div>
+  ${markedCount(Q)?`<button class="btn sm review-jump" data-act="reviewmarked">Go to marked (${markedCount(Q)})</button>`:""}
   <button class="btn pri full" data-act="rback">Back to summary</button></aside>`;
 }
 function viewReview(){
@@ -770,7 +779,7 @@ function viewReview(){
   const opts=reviewOptions(q,pick);
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${Q.marked?.[uid]?`<span class="tag review-tag">Marked for review</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${reasoningNote(r.reason)}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
@@ -804,10 +813,11 @@ function viewQuiz(){
     nav=`${prevB}<button class="btn" data-act="skip">${last?"Skip and finish":"Skip"}</button><button class="btn pri" data-act="check" ${cur?"":"disabled"}>Check Answer</button>`;
   }
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="exit">Exit</button><div class="bar" aria-hidden="true"><b style="width:${Math.round(answeredCount(Q)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.i+1} / ${Q.uids.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span class="question-tools">${reviewMarkButton(Q,uid)}${bmBtn(q.uid)}</span></div>
   ${Q.kind==="Daily revision"?`<p class="hint">Daily revision · ${esc(dailyReason(S.prog[uid])?.label||"Review in progress")}</p>`:""}
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
+  <div class="row"><button class="btn sm review-jump" data-act="marknext">${ic("flag")}Mark &amp; Next</button><span class="hint">Flag a question to revisit during this attempt.</span></div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${cfRow}${!locked&&cur?`<div class="field"><label class="label" for="reasoning">Your reasoning (optional)</label><textarea id="reasoning" maxlength="2000" style="min-height:90px;font:inherit" placeholder="Why this option? Which options did you eliminate, and why?">${esc(Q.rn[uid]||"")}</textarea><p class="hint">Write a short explanation before revealing the solution. This note is not graded.</p></div>`:""}
   ${verdict}${locked?reasoningNote(r.reason):""}${whyRow}${locked?solution(q):""}
@@ -824,10 +834,11 @@ function exitModal(Q){
   return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Are you sure you want to exit?</h2><p class="muted">${Q&&Q.mode==="exam"?"Your answers are not saved until you submit. If you leave now they are lost.":"Questions you have already checked are saved. The rest of this session will not count."}</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Yes, exit</button></div></div></div>`;
 }
 function finishModal(Q,exam){
-  const n=Q.uids.length,a=answeredCount(Q),u=n-a;
+  const n=Q.uids.length,a=answeredCount(Q),u=n-a,marked=markedCount(Q);
   return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="modal"><h2 id="mt">${exam?"Submit your test?":"End this session?"}</h2>
   <p class="muted">You have answered <strong>${a}</strong> of ${n} question${n===1?"":"s"}${u?` and <strong>${u}</strong> ${u===1?"is":"are"} unanswered`:""}.${u?(Q.kind==="Daily revision"?" Unchecked questions stay in your daily queue for later.":" Unanswered questions are marked as skipped and added to your Notebook."):""}${exam?" You cannot change your answers after submitting.":""}</p>
-  <div class="row"><button class="btn" data-act="finishno">Go back</button><button class="btn pri" data-act="finishok">${exam?"Yes, submit":"Yes, end session"}</button></div></div></div>`;
+  ${marked?`<p class="review-notice">${marked} question${marked===1?" is":"s are"} still marked for review.</p>`:""}
+  <div class="row"><button class="btn" data-act="finishno">Go back</button>${marked?`<button class="btn review-jump" data-act="reviewmarked">Review marked (${marked})</button>`:""}<button class="btn pri" data-act="finishok">${exam?"Yes, submit":"Yes, end session"}</button></div></div></div>`;
 }
 function fmtTime(ms){const s=Math.round(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function guessBlock(R,score){
@@ -864,7 +875,7 @@ function viewResult(){
   ${performanceCard(sessionPerformance(R),true)}
   ${guessBlock(R,score)}
   <div class="banner">${banner}</div>
-  <div class="row"><button class="btn pri" data-act="review">Review</button>${missed.length?`<button class="btn" data-act="redo">Redo the ${missed.length} missed</button>`:""}<button class="btn" data-act="tab" data-v="notebook" data-quizdone="1">Open Notebook</button></div>`;
+  <div class="row"><button class="btn pri" data-act="review">Review</button>${markedCount(Q)?`<button class="btn review-jump" data-act="reviewmarked">Review marked (${markedCount(Q)})</button>`:""}${missed.length?`<button class="btn" data-act="redo">Redo the ${missed.length} missed</button>`:""}<button class="btn" data-act="tab" data-v="notebook" data-quizdone="1">Open Notebook</button></div>`;
 }
 
 /* ---------- attempt history and reasoning ---------- */
@@ -1309,7 +1320,7 @@ function startQuiz(uids,o){
   S.confirmFin=false;S.confirmExit=false;
   if(!uids.length)return;
   o=o||{};
-  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},rn:{},tm:{},t0:Date.now(),done:false,elapsed:0};
+  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},rn:{},marked:{},tm:{},t0:Date.now(),done:false,elapsed:0};
   S.tab="practice";S.mdText="";render();window.scrollTo(0,0);
 }
 function doPick(L){
@@ -1330,6 +1341,22 @@ function doCheck(){
   render();
 }
 function goTo(k){const Q=S.quiz;if(!Q||Q.done||k<0||k>=Q.uids.length)return;tickQ();Q.i=k;render();window.scrollTo(0,0);}
+function markForReview(advance=false){
+  const Q=S.quiz;if(!Q||Q.done)return;
+  const uid=Q.uids[Q.i];Q.marked=Q.marked||{};
+  if(advance)Q.marked[uid]=true;else if(Q.marked[uid])delete Q.marked[uid];else Q.marked[uid]=true;
+  if(advance)goTo((Q.i+1)%Q.uids.length);else render();
+}
+function goToMarked(){
+  const Q=S.quiz;if(!Q||!markedCount(Q))return;
+  S.confirmFin=false;
+  const from=Q.done?(Q.rv??-1):Q.i;
+  for(let step=1;step<=Q.uids.length;step++){
+    const i=(from+step)%Q.uids.length;if(!Q.marked[Q.uids[i]])continue;
+    if(Q.done){Q.rv=i;render();window.scrollTo(0,0);}else goTo(i);
+    return;
+  }
+}
 function doSkip(){
   const Q=S.quiz;if(!Q||Q.done)return;
   const uid=Q.uids[Q.i];
@@ -1452,6 +1479,9 @@ document.addEventListener("click",async e=>{
     case "mvgo":{const fm=el.closest(".moveform");await doMove(fm.dataset.u,el.dataset.s,v);break;}
     case "mvgonew":{const fm=el.closest(".moveform");await doMove(fm.dataset.u,el.dataset.s,fm.querySelector(".mvnew").value);break;}
     case "pick":doPick(v);break;
+    case "markreview":markForReview();break;
+    case "marknext":markForReview(true);break;
+    case "reviewmarked":goToMarked();break;
     case "skip":doSkip();break;
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
@@ -1525,6 +1555,7 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("keydown",e=>{
   if(document.getElementById("quote-dialog")?.open)return;
+  if((e.key==="Enter"||e.key===" ")&&["markreview","marknext","reviewmarked"].includes(e.target?.dataset?.act))return;
   if(S.auth==="login"&&e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){authGo();e.preventDefault();return;}
   const Q=S.quiz;
   if(!Q&&S.tab==="practice"&&S.view==="tr"&&S.tr){

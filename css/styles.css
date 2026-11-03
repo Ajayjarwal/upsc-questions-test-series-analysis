@@ -246,6 +246,17 @@ summary.sm{cursor:pointer;font-weight:600}
 input.num{font:inherit;width:140px;background:var(--card2);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:10px 12px}
 
 /* quiz layout + palette */
+:root{--review:#b6a0ff;--review-soft:#29213f;--review-ink:#171020}
+:root[data-theme="light"]{--review:#7041b0;--review-soft:#efe5ff;--review-ink:#fff}
+.question-tools{display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto}
+.mark-review[aria-pressed=true],.review-tag{color:var(--review);background:var(--review-soft);border-color:var(--review)}
+.review-jump{display:inline-flex;align-items:center;justify-content:center;gap:7px;color:var(--review)}
+.review-jump svg.ic{width:16px;height:16px}
+.review-notice{color:var(--review);font-weight:600}
+.pn.marked{position:relative;box-shadow:inset 0 -3px var(--review)}
+.review-marker{position:absolute;right:-4px;top:-5px;width:18px;height:18px;display:grid;place-items:center;border-radius:50%;background:var(--review);color:var(--review-ink)}
+.review-marker svg.ic{width:12px;height:12px;stroke-width:2}
+.plegend i.review-key{background:var(--review);border-color:var(--review)}
 .qlayout{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:16px;align-items:start}
 .pal{position:sticky;top:12px;gap:14px}
 .pgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}

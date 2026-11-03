@@ -34,6 +34,34 @@ function app() {
   `, context);
   return code => vm.runInContext(code, context);
 }
+test('review marks toggle without changing selections, progress or bookmarks', () => {
+  const run=app();
+  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});doPick('B');const before=JSON.stringify(S.prog);markForReview();const marked=markedCount(S.quiz)===1&&S.quiz.sel['old:1']==='B'&&answeredCount(S.quiz)===0&&viewQuiz().includes('aria-pressed="true"')&&palette(S.quiz).includes('Question 1, marked for review');markForReview();return marked&&markedCount(S.quiz)===0&&before===JSON.stringify(S.prog)&&saveSet.size===0&&progress.size===0&&!viewQuiz().includes('class="opt right"')})()`),true);
+});
+test('keyboard activation of review controls never checks a selected Practice answer', () => {
+  const run=app();
+  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});doPick('A');for(const act of ['markreview','marknext','reviewmarked'])for(const key of ['Enter',' '])events.keydown.forEach(fn=>fn({key,target:{tagName:'BUTTON',dataset:{act}},preventDefault(){throw Error('Native review control activation must remain available')}}));return !S.quiz.res['old:1']&&Object.keys(S.prog).length===0})()`),true);
+});
+test('Mark and Next works in both modes across all four question spaces', () => {
+  const run=app();
+  assert.equal(run(`Object.keys(SPACES).every(space=>['practice','exam'].every(mode=>{S.space=space;const id=scopedPackId('review-paper');S.packs=[{id,questions:[question,{...question,no:2}]}];rebuild();S.prog={};const u=id+':1';startQuiz([u,id+':2'],{mode});doPick('A');S.quiz.rn[u]='My reasoning';markForReview(true);const Q=S.quiz;return Q.i===1&&markedCount(Q)===1&&(mode==='exam'?Q.ans[u]:Q.sel[u])==='A'&&Q.rn[u]==='My reasoning'&&Object.keys(S.prog).length===0&&!Q.res[u]&&!Q.skp[u]}))`),true);
+});
+test('marked navigation cycles and dismisses submission confirmation', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2},{...question,no:3});rebuild();startQuiz(['old:1','old:2','old:3'],{mode:'exam'});markForReview();goTo(2);markForReview();goTo(0);S.confirmFin=true;goToMarked();if(S.quiz.i!==2||S.confirmFin)return false;goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview();goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview(true);return S.quiz.i===0&&markedCount(S.quiz)===2})()`),true);
+});
+test('review flags do not change scoring or reveal answers before exam submission', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();startQuiz(['old:1','old:2'],{mode:'exam'});doPick('A');markForReview(true);markForReview();const hidden=!viewQuiz().includes('class="opt right"')&&!viewQuiz().includes('<span class="label">Solution</span>');const reminder=finishModal(S.quiz,true).includes('2 questions are still marked for review');finishQuiz();const Q=S.quiz;goToMarked();const review=Q.rv===0&&viewReview().includes('Marked for review');markForReview();return hidden&&reminder&&review&&Q.res['old:1'].ok&&Q.res['old:2'].skipped&&S.prog['old:1'].a===1&&S.prog['old:2'].sk===1&&markedCount(Q)===2&&viewResult().includes('Review marked (2)')})()`),true);
+});
+test('marks reset for new attempts and never enter saved backups', () => {
+  const run=app();
+  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});markForReview();if(buildBackup().includes('marked'))return false;startQuiz(['old:1'],{mode:'exam'});goToMarked();return markedCount(S.quiz)===0&&S.quiz.i===0&&!palette(S.quiz).includes('class="review-marker"')})()`),true);
+});
+test('marking daily revision questions does not count as reviewing or skipping', () => {
+  const run=app();
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();S.prog={'old:1':{a:1,w:1,m:1,l:'w',t:1},'old:2':{a:1,w:1,m:1,l:'w',t:1}};const before=JSON.stringify(S.prog);startDailyReview();markForReview(true);finishQuiz();return before===JSON.stringify(S.prog)&&dailyPlan().done===0&&dailyPlan().items.length===2&&S.quiz.uids.every(u=>S.quiz.res[u].deferred)})()`),true);
+});
 test('failed replacement save preserves original questions and retry input', async () => {
   const run=app();
   assert.equal(await run(`(async()=>{importFixture();S.store.savePack=async()=>{throw Error('offline')};try{await applyImport(false)}catch(e){}return disk.has('old')&&S.byUid.has('old:1')&&S.imp.text==='retry input'&&!S.importing})()`), true);
