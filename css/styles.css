@@ -83,7 +83,7 @@ textarea{width:100%;min-height:170px;font:13px/1.45 ui-monospace,Menlo,Consolas,
 .sc[aria-pressed=true] .chk{background:var(--gold);border-color:var(--gold)}
 .foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
-/* CSE uses aligned topic cards and compact question spacing. */
+/* Aligned subtopic cards for every question space. */
 .topic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .topic-card{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:0;min-height:88px;padding:16px;text-align:left;background:var(--card);border:1px solid var(--rule);border-radius:16px;cursor:pointer}
 .topic-info{display:flex;flex-direction:column;gap:4px;min-width:0}

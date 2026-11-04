@@ -689,10 +689,9 @@ function viewHome(){
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
     const entries=[...g.get(sub)],ks=entries.map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
-    const cards=S.space==="cse";
-    return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="${cards?"topic-grid":"row"}">${entries.map(([t,list])=>{
+    return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="topic-grid">${entries.map(([t,list])=>{
       const k=topicKey(sub,t),on=o.topics.has(k);
-      return cards?`<button class="topic-card" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}"><span class="topic-info"><span class="topic-name">${esc(t)}</span><span class="topic-count">${list.length} question${list.length===1?"":"s"}</span></span><span class="chk" aria-hidden="true">${on?ic("check"):""}</span></button>`:`<button class="chip" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}">${esc(t)}<small>${list.length}</small></button>`;
+      return `<button class="topic-card" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}"><span class="topic-info"><span class="topic-name">${esc(t)}</span><span class="topic-count">${list.length} question${list.length===1?"":"s"}</span></span><span class="chk" aria-hidden="true">${on?ic("check"):""}</span></button>`;
     }).join("")}</div></div>`;
   }).join("");
 }
