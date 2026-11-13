@@ -47,7 +47,7 @@ test('keyboard activation of review controls never checks a selected Practice an
   const run=app();
   assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});doPick('A');for(const act of ['markreview','reviewmarked'])for(const key of ['Enter',' '])events.keydown.forEach(fn=>fn({key,target:{tagName:'BUTTON',dataset:{act}},preventDefault(){throw Error('Native review control activation must remain available')}}));return !S.quiz.res['old:1']&&Object.keys(S.prog).length===0})()`),true);
 });
-test('Mark for review stays on the question in both modes across all four spaces', () => {
+test('Mark for review stays on the question in both modes across all spaces', () => {
   const run=app();
   assert.equal(run(`Object.keys(SPACES).every(space=>['practice','exam'].every(mode=>{S.space=space;const id=scopedPackId('review-paper');S.packs=[{id,questions:[question,{...question,no:2}]}];rebuild();S.prog={};const u=id+':1';startQuiz([u,id+':2'],{mode});doPick('A');S.quiz.rn[u]='My reasoning';markForReview();const Q=S.quiz;return Q.i===0&&!viewQuiz().includes('data-act="marknext"')&&markedCount(Q)===1&&(mode==='exam'?Q.ans[u]:Q.sel[u])==='A'&&Q.rn[u]==='My reasoning'&&Object.keys(S.prog).length===0&&!Q.res[u]&&!Q.skp[u]}))`),true);
 });
@@ -255,7 +255,7 @@ test('dashboard uses only active-space data and leaves the bank and progress unc
       S.space=space;rebuild();const html=viewHome(),head=header(),menu=menuHtml();
       if(!head.includes('Current practice section')||!head.includes('>'+spaceName()+'</span>')||head.includes('data-v="cse"')||!menu.includes('data-v="'+space+'"'))return false;
       if(html.includes('Demo data')||html.includes('Design preview')||html.includes('Sample questions'))return false;
-      if((space==='cse')!==html.includes('data-feature-act="search-open"'))return false;
+      if((['cse','csat'].includes(space))!==html.includes('data-feature-act="search-open"'))return false;
       if(isExamSpace()&&html.indexOf('First attempts vs repeat practice')>html.indexOf(spaceName()+' PYQs by year'))return false;
     }
     return before===JSON.stringify({packs:S.packs,prog:S.prog});
@@ -270,4 +270,32 @@ test('menu preserves account status, escapes email, and exposes sign out only fo
     S.storage='account';const account=menuHtml();
     return cloud.includes('a&lt;&amp;@example.com')&&cloud.includes('data-act="signout"')&&!local.includes('data-act="signout"')&&local.includes('Saved in this browser only')&&account.includes('Saved to your Claude account');
   })()`),true);
+});
+
+test('CSAT imports, backups and progress remain isolated when another section has the same test ID',async()=>{
+  const run=app();
+  assert.equal(await run(`(async()=>{
+    S.packs.push({id:'cse::old',title:'CSE',questions:[question]});S.prog={'old:1':{a:2,c:1},'cse::old:1':{a:3,c:2}};
+    const before=JSON.stringify(S.prog);S.space='csat';
+    S.imp={year:'2021',parsed:{id:scopedPackId('old'),title:'CSAT',questions:[{...question,subject:'Quantitative Aptitude',topic:'Percentages'}]},dups:[]};
+    await applyImport(false);const backup=parseBackup(buildBackup());
+    return disk.has('old')&&disk.has('csat::old')&&S.qs.length===1&&S.qs[0].packId==='csat::old'&&S.qs[0].year==='2021'&&JSON.stringify(S.prog)===before&&backup.packs.some(p=>p.id==='csat::old')&&buildAnalysis().includes('cse,CSE,1,');
+  })()`),true);
+});
+
+test('CSAT year-wise practice, exam, review and daily revision use only CSAT questions',()=>{
+  const run=app();
+  assert.equal(run(`(()=>{
+    S.packs=[{id:'csat::a',title:'CSAT 2021 A',questions:[{...question,year:'2021'},{...question,no:2,year:'2020'}]},{id:'csat::b',title:'CSAT 2021 B',questions:[{...question,year:'2021'}]},{id:'cse::a',questions:[{...question,year:'2021'}]}];
+    S.space='csat';rebuild();S.prog={'csat::a:1':{a:1,w:1,m:1,l:'w',t:1},'cse::a:1':{a:1,w:1,m:1,l:'w',t:1}};
+    const home=viewHome();
+    for(const mode of ['practice','exam']){S.newMode=mode;attemptPyqYear('2021');if(S.quiz.mode!==mode||S.quiz.kind!=='CSAT year PYQ'||S.quiz.uids.join()!=='csat::a:1,csat::b:1')return false;}
+    reviewPyqYear('2021');S.tr.f='bad';
+    return viewTest().includes('CSAT PYQs · 2021')&&trList().list.length===1&&dailyPlan().items.length===1&&dailyPlan().items[0].q.packId==='csat::a'&&home.includes('CSAT PYQ Practice')&&home.includes('First attempts vs repeat practice')&&home.includes('CSAT PYQs by year')&&!home.includes('Tests not attempted yet')&&!home.includes('<h2>Review a test</h2>')&&home.indexOf('CSAT PYQs by year')>home.indexOf('First attempts vs repeat practice')&&emptyBank().includes('CSAT PYQ JSON')&&menuHtml().includes('data-v="csat"');
+  })()`),true);
+});
+
+test('CSAT uses compact question spacing and ordered subtopic cards without changing imported text',()=>{
+  const run=app();
+  assert.equal(run(String.raw`(()=>{S.space='csat';const raw='Read the passage\n\n\nQuestion';const items=[{...question,topic:'Percentages'},{...question,no:2,topic:'Ratio and proportion'}];const html=topicGroups({subjects:new Set(['Science']),topics:new Set()},groupBySubject(items),['Science']);return questionDisplayText(raw)==='Read the passage\nQuestion'&&html.indexOf('Percentages')<html.indexOf('Ratio and proportion')&&html.includes('topic-card')&&raw==='Read the passage\n\n\nQuestion'})()`),true);
 });

@@ -32,39 +32,39 @@ function fixture(){
   return code=>vm.runInContext(code,context);
 }
 test('federalism searches question and solution, with related results last',()=>{
-  const run=fixture();assert.equal(run(`JSON.stringify(cseSearch('FEDERALISM').map(r=>[r.q.no,r.direct,r.fields]))`),JSON.stringify([[1,true,['Question','Solution']],[3,true,['Solution']],[2,false,['Question','Solution','Topic label']]]));
-  assert.equal(run(`cseSearch('federalism',false).length`),2);
+  const run=fixture();assert.equal(run(`JSON.stringify(searchQuestions('FEDERALISM').map(r=>[r.q.no,r.direct,r.fields]))`),JSON.stringify([[1,true,['Question','Solution']],[3,true,['Solution']],[2,false,['Question','Solution','Topic label']]]));
+  assert.equal(run(`searchQuestions('federalism',false).length`),2);
 });
 test('centre/center, punctuation and singular/plural relation aliases work',()=>{
-  const run=fixture();for(const term of ['state-center relation','Centre–State relations','center-state relation'])assert.equal(run(`cseSearch(${JSON.stringify(term)}).length`),3);
+  const run=fixture();for(const term of ['state-center relation','Centre–State relations','center-state relation'])assert.equal(run(`searchQuestions(${JSON.stringify(term)}).length`),3);
 });
 test('whole words, option text, empty and unknown searches work',()=>{
-  const run=fixture();assert.equal(run(`cseSearch('   ').length+cseSearch('zzz-no-match').length`),0);
-  assert.equal(run(`(()=>{S.qs=[{...S.qs[0],text:'Estates are discussed',exp:'',sum:'',options:{A:'A federalism example'}}];const r=cseSearch('federalism');return r.length===1&&r[0].fields.join()==='Options'&&cseSearch('state').length===0})()`),true);
+  const run=fixture();assert.equal(run(`searchQuestions('   ').length+searchQuestions('zzz-no-match').length`),0);
+  assert.equal(run(`(()=>{S.qs=[{...S.qs[0],text:'Estates are discussed',exp:'',sum:'',options:{A:'A federalism example'}}];const r=searchQuestions('federalism');return r.length===1&&r[0].fields.join()==='Options'&&searchQuestions('state').length===0})()`),true);
 });
-test('search never changes progress and excludes all other spaces',()=>{
-  const run=fixture();assert.equal(run(`(()=>{S.prog={'cse::design-demo:1':{a:4,m:1}};const before=JSON.stringify(S.prog);cseSearch('federalism');viewCseSearch();return before===JSON.stringify(S.prog)&&['static','ca','capf'].every(space=>{S.space=space;return cseSearch('federalism').length===0&&!viewHome().includes('data-feature-act="search-open"')})})()`),true);
+test('search never changes progress and is unavailable in Static, Current Affairs and CAPF',()=>{
+  const run=fixture();assert.equal(run(`(()=>{S.prog={'cse::design-demo:1':{a:4,m:1}};const before=JSON.stringify(S.prog);searchQuestions('federalism');viewQuestionSearch();return before===JSON.stringify(S.prog)&&['static','ca','capf'].every(space=>{S.space=space;return searchQuestions('federalism').length===0&&!viewHome().includes('data-feature-act="search-open"')})})()`),true);
 });
-test('only CSE exposes search and answer details stay collapsed',()=>{
-  const run=fixture();assert.equal(run(`viewHome().includes('data-feature-act="search-open"')&&viewCseSearch().includes('id="cse-search-form"')`),true);
-  assert.equal(run(`(()=>{const html=searchResult(cseSearch('federalism')[0]);return html.includes('<details class="search-answer">')&&!html.includes('<details open')})()`),true);
+test('CSE exposes search and answer details stay collapsed',()=>{
+  const run=fixture();assert.equal(run(`viewHome().includes('data-feature-act="search-open"')&&viewQuestionSearch().includes('id="question-search-form"')`),true);
+  assert.equal(run(`(()=>{const html=searchResult(searchQuestions('federalism')[0]);return html.includes('<details class="search-answer">')&&!html.includes('<details open')})()`),true);
 });
 test('search highlights normalized phrases and escapes imported HTML',()=>{
   const run=fixture();assert.equal(run(`searchHighlight('<img src=x> Centre–State relations & federalism',['centre state relation','federalism'])`),'&lt;img src=x&gt; <mark>Centre–State relations</mark> &amp; <mark>federalism</mark>');
 });
 test('religion expands to its subtopics while exact-only mode does not',()=>{
-  const run=fixture();assert.equal(run(`cseSearch('religion').length`),4);
-  assert.equal(run(`cseSearch('religion').every(r=>!r.direct&&r.q.packId==='cse::design-religion-demo')`),true);
-  assert.equal(run(`cseSearch('religion',false).length`),0);
-  assert.equal(run(`cseSearch('religions').length`),4);
+  const run=fixture();assert.equal(run(`searchQuestions('religion').length`),4);
+  assert.equal(run(`searchQuestions('religion').every(r=>!r.direct&&r.q.packId==='cse::design-religion-demo')`),true);
+  assert.equal(run(`searchQuestions('religion',false).length`),0);
+  assert.equal(run(`searchQuestions('religions').length`),4);
 });
 test('narrow religious queries do not expand to every religion',()=>{
   const run=fixture();assert.equal(run(`searchPlan('Buddhism').aliases.includes('jainism')`),false);
   // A question may mention Buddhism in an option; that is a real text match.
-  assert.equal(run(`(()=>{const base=S.qs[0];S.qs=[{...base,no:1,text:'The Eightfold Path is taught here',options:{A:'Yes'},topic:'Buddhism',exp:'',sum:''},{...base,no:2,text:'Mahavira is discussed here',options:{A:'Yes'},topic:'Jainism',exp:'',sum:''}];return cseSearch('Buddhism').length===1&&cseSearch('Buddhism')[0].q.no===1})()`),true);
+  assert.equal(run(`(()=>{const base=S.qs[0];S.qs=[{...base,no:1,text:'The Eightfold Path is taught here',options:{A:'Yes'},topic:'Buddhism',exp:'',sum:''},{...base,no:2,text:'Mahavira is discussed here',options:{A:'Yes'},topic:'Jainism',exp:'',sum:''}];return searchQuestions('Buddhism').length===1&&searchQuestions('Buddhism')[0].q.no===1})()`),true);
 });
 test('topic labels can find a question even without the word in its text',()=>{
-  const run=fixture();assert.equal(run(`(()=>{S.qs=[{...S.qs[0],text:'Consider these teachings',options:{A:'One'},topic:'Buddhism',exp:'',sum:''}];const result=cseSearch('religion');return result.length===1&&result[0].fields.join()==='Topic label'&&result[0].terms.includes('buddhism')&&cseSearch('religion',false).length===0})()`),true);
+  const run=fixture();assert.equal(run(`(()=>{S.qs=[{...S.qs[0],text:'Consider these teachings',options:{A:'One'},topic:'Buddhism',exp:'',sum:''}];const result=searchQuestions('religion');return result.length===1&&result[0].fields.join()==='Topic label'&&result[0].terms.includes('buddhism')&&searchQuestions('religion',false).length===0})()`),true);
 });
 test('quote import accepts supported formats and rejects invalid entries',()=>{
   const run=fixture();assert.equal(run(`JSON.stringify(parseQuoteJson(JSON.stringify({quotes:[{quote:'  Keep going  ',author:'  Me '},'Another quote']})))`),JSON.stringify([{text:'Keep going',author:'Me'},{text:'Another quote',author:''}]));
@@ -82,4 +82,26 @@ test('production preserves authentication and contains no demo seeding',()=>{
   assert.ok(!script.includes('Design preview · sample data'));
   assert.ok(script.includes('solo-daily-quotes-preview-v1'));
   assert.ok(script.includes('solo-daily-quotes-v1'));
+});
+
+test('CSAT searches its own questions and solutions with aptitude aliases and no CSE results',()=>{
+  const run=fixture();
+  assert.equal(run(`(()=>{
+    const base={no:1,subject:'Quantitative Aptitude',topic:'Percentages',options:{A:'One',B:'Two'},answer:'A'};
+    S.packs.push({id:'csat::paper',title:'CSAT 2021',questions:[{...base,text:'Find the percentages.'},{...base,no:2,topic:'Proportion',text:'A price changes.',exp:'The percent change is calculated from the initial value.'},{...base,no:3,topic:'Probability',text:'Find the chance of an event.'}]});
+    S.space='csat';rebuild();const before=JSON.stringify(S.prog),all=searchQuestions('percentages'),exact=searchQuestions('percentages',false),page=viewQuestionSearch();
+    return all.length===2&&all.every(r=>r.q.packId==='csat::paper')&&all[0].direct&&!all[1].direct&&all[1].fields.includes('Solution')&&exact.length===1&&page.includes('Search CSAT questions')&&page.includes('Back to CSAT Practice')&&page.includes('Comprehension')&&page.includes('Logical reasoning')&&JSON.stringify(S.prog)===before;
+  })()`),true);
+});
+
+test('CSE and CSAT keep independent search queries, filters and page positions',()=>{
+  const run=fixture();
+  assert.equal(run(`(()=>{
+    render=()=>{};
+    runQuestionSearch('federalism');activeSearch().page=2;activeSearch().related=false;
+    S.space='csat';if(activeSearch().query!==''||activeSearch().page!==1||!activeSearch().related)return false;
+    runQuestionSearch('syllogism');activeSearch().draft='Another CSAT draft';
+    if(searchPlan('syllogism').aliases.includes('seating arrangement')||!searchPlan('reasoning').aliases.includes('syllogism'))return false;
+    S.space='cse';return activeSearch().query==='federalism'&&activeSearch().page===2&&!activeSearch().related&&!searchPlan('reasoning').aliases.includes('syllogism');
+  })()`),true);
 });

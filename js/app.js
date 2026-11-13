@@ -28,6 +28,7 @@ const SPACES={
   static:{label:"Static",prefix:""},
   ca:{label:"Current Affairs",prefix:"ca::"},
   cse:{label:"CSE",prefix:"cse::"},
+  csat:{label:"CSAT",prefix:"csat::"},
   capf:{label:"CAPF",prefix:"capf::"}
 };
 /* ---------- state ---------- */
@@ -132,7 +133,8 @@ function scopedPackId(id,space=S.space){const prefix=SPACES[space].prefix;return
 function inSpace(id){return packSpace(id)===S.space;}
 function spacePacks(){return S.packs.filter(p=>inSpace(p.id));}
 function spaceName(){return SPACES[S.space].label;}
-const isExamSpace=()=>S.space==="capf"||S.space==="cse";
+const isExamSpace=()=>["capf","cse","csat"].includes(S.space);
+const isSearchSpace=()=>S.space==="cse"||S.space==="csat";
 const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const curMonth=()=>mKey(Date.now());
 function mKey(ts){const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
@@ -334,7 +336,7 @@ function parseImport(text){
 
 /* ---------- solution formatting ---------- */
 function questionDisplayText(text){
-  if(S.space!=="cse")return String(text);
+  if(!isSearchSpace())return String(text);
   const lines=String(text).replace(/\r\n?/g,"\n").split("\n"),out=[];
   const tableLine=line=>line.includes("|")||line.includes("\t");
   for(let i=0;i<lines.length;i++){
@@ -409,7 +411,7 @@ function solution(q){
 }
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
-/* ---------- CSE search and daily quotes ---------- */
+/* ---------- Question search and daily quotes ---------- */
 const QUOTES_KEY=LOCAL_PREVIEW?"solo-daily-quotes-preview-v1":"solo-daily-quotes-v1";
 const SEARCH_ICON='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>';
 const EDIT_ICON='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5M4 20l4-1 13-13-4-4L4 15z"/></svg>';
@@ -443,20 +445,43 @@ const TOPIC_FAMILIES=[{
   aliases:["religion","religions","religious","faith","faiths","religious traditions","religious movements","indian religions","religion in india"],
   terms:["religion","religions","religious","faith","faiths","buddhism","buddhist","buddha","four noble truths","eightfold path","jainism","jain","jaina","jainas","mahavira","tirthankara","tirthankaras","anekantavada","hinduism","hindu","vedic","vedas","upanishads","shaivism","vaishnavism","shaktism","islam","islamic","sufism","sufi","sufis","silsila","silsilah","chishti","chisti","bhakti","kabir","alvars","nayanars","sikhism","sikh","guru nanak","guru granth sahib","khalsa","christianity","christian","zoroastrianism","zoroastrian","judaism","jewish"]
 }];
-const CSE_SEARCH={draft:"",query:"",related:true,page:1};
+const CSAT_RELATED_TOPICS=[
+  ["percentage","percentages","percent","percentage change"],
+  ["ratio","ratios","proportion","proportions","ratio and proportion"],
+  ["average","averages","mean","arithmetic mean"],
+  ["profit and loss","profit loss","profit","loss","discount","marked price","cost price","selling price"],
+  ["time and work","work and time","work rate","pipes and cisterns"],
+  ["time and distance","speed time distance","speed and distance","relative speed","boats and streams","trains"],
+  ["number system","number systems","divisibility","remainders","hcf","lcm"],
+  ["probability","probabilities","chance"],
+  ["permutation and combination","permutations","combinations","counting principles"],
+  ["data interpretation","data analysis","bar chart","pie chart","line graph"],
+  ["syllogism","syllogisms","categorical reasoning"],
+  ["blood relation","blood relations","family relation","family relations"],
+  ["coding decoding","coding and decoding","letter coding"],
+  ["seating arrangement","seating arrangements","linear arrangement","circular arrangement"],
+  ["direction sense","directions","direction test"],
+  ["reading comprehension","comprehension","reading passage"]
+];
+const CSAT_TOPIC_FAMILIES=[
+  {aliases:["reasoning","logical reasoning","analytical reasoning"],terms:["reasoning","syllogism","syllogisms","blood relations","coding decoding","coding and decoding","seating arrangement","direction sense","assumption","conclusion","logical deduction"]},
+  {aliases:["quantitative aptitude","numerical ability","basic numeracy","maths","mathematics"],terms:["percentage","percentages","ratio","proportion","average","profit and loss","time and work","time and distance","number system","probability","permutations","combinations","data interpretation"]}
+];
+const QUESTION_SEARCH={cse:{draft:"",query:"",related:true,page:1},csat:{draft:"",query:"",related:true,page:1}};
+const activeSearch=()=>QUESTION_SEARCH[S.space]||QUESTION_SEARCH.cse;
 function searchNormalize(value){
   return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim().split(/\s+/).map(w=>w==="center"?"centre":w==="relations"?"relation":w==="states"?"state":w==="centres"?"centre":w).join(" ");
 }
 function hasSearchPhrase(text,phrase){return !!phrase&&(" "+text+" ").includes(" "+phrase+" ");}
 function searchPlan(query,related=true){
   const phrase=searchNormalize(query),tokens=[...new Set(phrase.split(" ").filter(Boolean))];
-  const groups=related?RELATED_TOPICS.filter(g=>g.some(alias=>searchNormalize(alias)===phrase)):[];
-  const families=related?TOPIC_FAMILIES.filter(f=>f.aliases.some(alias=>searchNormalize(alias)===phrase)):[];
+  const groups=related?(S.space==="csat"?CSAT_RELATED_TOPICS:RELATED_TOPICS).filter(g=>g.some(alias=>searchNormalize(alias)===phrase)):[];
+  const families=related?(S.space==="csat"?CSAT_TOPIC_FAMILIES:TOPIC_FAMILIES).filter(f=>f.aliases.some(alias=>searchNormalize(alias)===phrase)):[];
   const aliases=[...new Set([...groups.flat(),...families.flatMap(f=>f.terms)].map(searchNormalize))].filter(a=>a!==phrase);
   return {phrase,tokens,aliases};
 }
-function cseSearch(query,related=true){
-  if(S.space!=="cse")return [];
+function searchQuestions(query,related=true){
+  if(!isSearchSpace())return [];
   const plan=searchPlan(query,related);if(!plan.tokens.length)return [];
   return S.qs.flatMap(q=>{
     const fields=[{name:"Question",value:q.text},{name:"Options",value:Object.values(q.options||{}).join(" ")},{name:"Solution",value:[q.exp,q.sum].filter(Boolean).join("\n")}].map(f=>({...f,normal:searchNormalize(f.value)}));
@@ -497,19 +522,19 @@ function searchResult(row){
     ${!direct?`<p class="match-note">Related terms found: ${esc(terms.join(", "))}</p>`:""}
     <details class="search-answer"><summary>View options, answer &amp; full solution</summary><div class="search-answer-body">${figs(q.qimg)}${Object.entries(q.options).map(([key,value])=>`<p><strong>${esc(key)}.</strong> ${searchHighlight(value,terms)}</p>`).join("")}<p class="gold">Accepted answer: ${esc(acceptedAnswers(q).join(" or "))}</p>${solution(q)||`<p class="hint">No solution was included in this import.</p>`}</div></details></article>`;
 }
-function viewCseSearch(){
-  const {query,related,page}=CSE_SEARCH,rows=cseSearch(query,related),exact=rows.filter(r=>r.direct).length,relatedCount=rows.length-exact;
+function viewQuestionSearch(){
+  const {query,related,page}=activeSearch(),csat=S.space==="csat",examples=csat?["Comprehension","Percentages","Time and work","Logical reasoning"]:["Federalism","Religion","Monetary policy","Biodiversity"],rows=searchQuestions(query,related),exact=rows.filter(r=>r.direct).length,relatedCount=rows.length-exact;
   const size=12,pages=Math.max(1,Math.ceil(rows.length/size)),current=Math.min(page,pages),plan=searchPlan(query,related);
-  return `<button class="backlink" data-feature-act="search-back">← Back to CSE Practice</button>
-    <section class="card search-box"><div class="row sp"><span class="label gold">Explore your CSE question bank</span>${SEARCH_ICON}</div><h1>Has this topic appeared before?</h1><p class="muted">Find words and related topics in your imported questions, options and solutions.</p>
-    <form id="cse-search-form" class="search-form" role="search"><label class="sr-only" for="cse-search-input">Search CSE questions</label><input class="txt" id="cse-search-input" type="search" maxlength="160" value="${esc(CSE_SEARCH.draft)}" placeholder="Try federalism, inflation, Buddhism…" autocomplete="off"><button class="btn pri" type="submit">Search questions</button></form>
+  return `<button class="backlink" data-feature-act="search-back">← Back to ${spaceName()} Practice</button>
+    <section class="card search-box"><div class="row sp"><span class="label gold">Explore your ${spaceName()} question bank</span>${SEARCH_ICON}</div><h1>Has this topic appeared before?</h1><p class="muted">Find words and related topics in your imported questions, options and solutions.</p>
+    <form id="question-search-form" class="search-form" role="search"><label class="sr-only" for="question-search-input">Search ${spaceName()} questions</label><input class="txt" id="question-search-input" type="search" maxlength="160" value="${esc(activeSearch().draft)}" placeholder="${csat?"Try percentages, comprehension, syllogisms…":"Try federalism, inflation, Buddhism…"}" autocomplete="off"><button class="btn pri" type="submit">Search questions</button></form>
     <div class="search-controls"><label><input id="search-related" type="checkbox" ${related?"checked":""}> Include related topics</label><span class="hint">Questions + options + solutions</span></div>
-    <div class="search-chips"><span class="hint">Try</span>${["Federalism","Religion","Monetary policy","Biodiversity"].map(t=>`<button class="chip" data-feature-act="search-suggestion" data-value="${esc(t)}">${esc(t)}</button>`).join("")}</div></section>
-    ${query?`<div class="field" style="gap:8px" role="status"><div class="row sp"><h2>${rows.length} result${rows.length===1?"":"s"} for “${esc(query)}”</h2><span class="hint">${S.qs.length} CSE questions searched</span></div><div class="search-counts"><span class="tag">${exact} keyword match${exact===1?"":"es"}</span>${related?`<span class="tag plain">${relatedCount} related-topic match${relatedCount===1?"":"es"}</span>`:""}</div>${plan.aliases.length?`<p class="hint">Also looking for: ${esc(plan.aliases.slice(0,6).join(", "))}${plan.aliases.length>6?"…":""}</p>`:""}</div>`:`<section class="card flat"><h2>Follow a topic across papers</h2><p class="muted">Search “federalism” to find direct mentions, plus related terms such as Centre–State relations and the Seventh Schedule.</p></section>`}
-    ${query&&!rows.length?`<section class="card flat"><h2>No matching questions in this bank</h2><p class="muted">Try a shorter keyword or import more CSE papers. No match here does not mean a topic has never appeared in UPSC.</p></section>`:""}
+    <div class="search-chips"><span class="hint">Try</span>${examples.map(t=>`<button class="chip" data-feature-act="search-suggestion" data-value="${esc(t)}">${esc(t)}</button>`).join("")}</div></section>
+    ${query?`<div class="field" style="gap:8px" role="status"><div class="row sp"><h2>${rows.length} result${rows.length===1?"":"s"} for “${esc(query)}”</h2><span class="hint">${S.qs.length} ${spaceName()} questions searched</span></div><div class="search-counts"><span class="tag">${exact} keyword match${exact===1?"":"es"}</span>${related?`<span class="tag plain">${relatedCount} related-topic match${relatedCount===1?"":"es"}</span>`:""}</div>${plan.aliases.length?`<p class="hint">Also looking for: ${esc(plan.aliases.slice(0,6).join(", "))}${plan.aliases.length>6?"…":""}</p>`:""}</div>`:`<section class="card flat"><h2>Follow a topic across papers</h2><p class="muted">${csat?"Search “percentages” to find direct mentions and related terms such as percent and percentage change.":"Search “federalism” to find direct mentions, plus related terms such as Centre–State relations and the Seventh Schedule."}</p></section>`}
+    ${query&&!rows.length?`<section class="card flat"><h2>No matching questions in this bank</h2><p class="muted">Try a shorter keyword or import more ${spaceName()} papers. No match here does not mean a topic has never appeared in UPSC.</p></section>`:""}
     ${rows.slice((current-1)*size,current*size).map(searchResult).join("")}
     ${pages>1?`<nav class="search-pagination" aria-label="Search result pages"><button class="btn sm" data-feature-act="search-page" data-value="${current-1}" ${current===1?"disabled":""}>Previous</button><span class="hint">${current} / ${pages}</span><button class="btn sm" data-feature-act="search-page" data-value="${current+1}" ${current===pages?"disabled":""}>Next</button></nav>`:""}
-    <details class="card flat"><summary class="hint">How are related topics matched?</summary><p class="hint">Keyword matches look for all your search words within question text, options or a solution. Related matching also checks topic and subject labels, plus a curated dictionary: for example, religion includes Buddhism, Jainism, Bhakti and Sufism. Broad categories expand to their subtopics; a narrow Buddhism search stays focused on Buddhism. This is dictionary-based matching, not an AI understanding of every topic.${query&&related&&!plan.aliases.length?" This search has no dictionary expansion; only your words and matching topic labels are being checked.":""}</p></details>
+    <details class="card flat"><summary class="hint">How are related topics matched?</summary><p class="hint">Keyword matches look for all your search words within question text, options or a solution. Related matching also checks topic and subject labels, plus a curated dictionary: ${csat?"for example, logical reasoning includes syllogisms, blood relations and seating arrangements. Broad categories expand to their subtopics; a narrow syllogism search stays focused on syllogisms.":"for example, religion includes Buddhism, Jainism, Bhakti and Sufism. Broad categories expand to their subtopics; a narrow Buddhism search stays focused on Buddhism."} This is dictionary-based matching, not an AI understanding of every topic.${query&&related&&!plan.aliases.length?" This search has no dictionary expansion; only your words and matching topic labels are being checked.":""}</p></details>
     <p class="hint">Results cover your imports only. No result does not prove a topic has never appeared in UPSC. Browsing results does not record an attempt.</p>`;
 }
 function parseQuoteJson(text){
@@ -628,15 +653,15 @@ function openQuoteEditor(trigger){
   if(quoteSync.error)document.getElementById("quote-error").textContent=quoteSync.error;
 }
 function closeQuoteEditor(){document.getElementById("quote-dialog").close();quoteTrigger?.focus();}
-function runCseSearch(value){CSE_SEARCH.query=String(value).trim().slice(0,160);CSE_SEARCH.draft=CSE_SEARCH.query;CSE_SEARCH.page=1;render();}
+function runQuestionSearch(value){activeSearch().query=String(value).trim().slice(0,160);activeSearch().draft=activeSearch().query;activeSearch().page=1;render();}
 document.addEventListener("click",e=>{
   const el=e.target.closest("[data-feature-act]");if(!el)return;
   if(quoteSaving&&el.dataset.featureAct.startsWith("quote-"))return;
   switch(el.dataset.featureAct){
-    case "search-open":if(S.space!=="cse")return;S.view="search";S.tab="practice";S.quiz=null;render();document.getElementById("cse-search-input").focus();window.scrollTo(0,0);break;
+    case "search-open":if(!isSearchSpace())return;S.view="search";S.tab="practice";S.quiz=null;render();document.getElementById("question-search-input").focus();window.scrollTo(0,0);break;
     case "search-back":S.view="home";render();window.scrollTo(0,0);break;
-    case "search-suggestion":runCseSearch(el.dataset.value);break;
-    case "search-page":CSE_SEARCH.page=Number(el.dataset.value);render();document.getElementById("cse-search-form").scrollIntoView({block:"start"});break;
+    case "search-suggestion":runQuestionSearch(el.dataset.value);break;
+    case "search-page":activeSearch().page=Number(el.dataset.value);render();document.getElementById("question-search-form").scrollIntoView({block:"start"});break;
     case "quote-edit":openQuoteEditor(el);break;
     case "quote-cancel":closeQuoteEditor();break;
     case "quote-add":if(quoteDraft.length>=500){document.getElementById("quote-error").textContent="The collection can contain up to 500 quotes.";break;}quoteDraft.push({text:"",author:""});drawQuoteEditor();document.getElementById("quote-text-"+(quoteDraft.length-1)).focus();break;
@@ -646,19 +671,19 @@ document.addEventListener("click",e=>{
   }
 });
 document.addEventListener("input",e=>{
-  if(e.target.id==="cse-search-input")CSE_SEARCH.draft=e.target.value;
+  if(e.target.id==="question-search-input")activeSearch().draft=e.target.value;
   if(e.target.dataset&&Object.hasOwn(e.target.dataset,"quoteText"))quoteDraft[Number(e.target.dataset.quoteText)].text=e.target.value;
   if(e.target.dataset&&Object.hasOwn(e.target.dataset,"quoteAuthor"))quoteDraft[Number(e.target.dataset.quoteAuthor)].author=e.target.value;
 });
 document.addEventListener("change",async e=>{
-  if(e.target.id==="search-related"){CSE_SEARCH.related=e.target.checked;CSE_SEARCH.page=1;render();}
+  if(e.target.id==="search-related"){activeSearch().related=e.target.checked;activeSearch().page=1;render();}
   if(e.target.id!=="quote-json-file")return;
   const file=e.target.files?.[0];if(!file)return;
   try{if(file.size>1048576)throw Error("Choose a JSON file smaller than 1 MB.");const imported=parseQuoteJson(await file.text());if(!document.getElementById("quote-dialog").open)return;quoteDraft=imported;drawQuoteEditor();}
   catch(err){document.getElementById("quote-error").textContent=err instanceof SyntaxError?"This file is not valid JSON. Your saved quotes have not changed.":err.message;}
 });
 document.addEventListener("submit",async e=>{
-  if(e.target.id==="cse-search-form"){e.preventDefault();if(S.space==="cse")runCseSearch(document.getElementById("cse-search-input").value);}
+  if(e.target.id==="question-search-form"){e.preventDefault();if(isSearchSpace())runQuestionSearch(document.getElementById("question-search-input").value);}
   if(e.target.id==="quote-editor-form"){
     e.preventDefault();if(quoteSaving)return;
     const generation=quoteGeneration;
@@ -702,6 +727,7 @@ const UI_MENU_DETAILS={
   static:{icon:"book",description:"Build your subject knowledge"},
   ca:{icon:"heat",description:"Practise your monthly question sets"},
   cse:{icon:"quiz",description:"Civil Services previous-year questions"},
+  csat:{icon:"book",description:"Aptitude and comprehension previous-year questions"},
   capf:{icon:"flag",description:"CAPF previous-year questions"}
 };
 function uiMenuExpanded(open){
@@ -840,7 +866,7 @@ function viewHome(){
   const plan=dailyPlan(),stats=stat(S.qs),mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
   const ready=smartPool("",{months:new Set()}).length,subjects=new Set(S.qs.map(q=>q.subject)).size;
   const accuracy=stats.att?Math.round(stats.ok/stats.att*100):null;
-  return `<div class="ui-home"><section class="ui-hero"><div><div class="ui-overline">${esc(spaceName())} / Overview ${LOCAL_PREVIEW?'<span class="ui-context-label">Local preview</span>':""}</div><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Your practice dashboard"}</h1><p>Keep revision moving. Build a quiz, revisit mistakes, and see what sticks.</p></div>${S.space==="cse"?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:`<button class="btn" data-act="tab" data-v="import">+ Import questions</button>`}</section>
+  return `<div class="ui-home"><section class="ui-hero"><div><div class="ui-overline">${esc(spaceName())} / Overview ${LOCAL_PREVIEW?'<span class="ui-context-label">Local preview</span>':""}</div><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Your practice dashboard"}</h1><p>Keep revision moving. Build a quiz, revisit mistakes, and see what sticks.</p></div>${isSearchSpace()?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:`<button class="btn" data-act="tab" data-v="import">+ Import questions</button>`}</section>
   <section class="ui-stats" aria-label="Your practice at a glance"><div class="ui-stat"><span class="ui-stat-label">Questions</span><strong class="ui-stat-value">${S.qs.length}</strong><span class="ui-stat-note">${subjects} subject${subjects===1?"":"s"}</span></div><div class="ui-stat"><span class="ui-stat-label">Accuracy</span><strong class="ui-stat-value">${accuracy===null?"—":accuracy+"%"}</strong><span class="ui-stat-note">Latest answers · ${stats.att}</span></div><div class="ui-stat"><span class="ui-stat-label">To revisit</span><strong class="ui-stat-value">${mis}</strong><span class="ui-stat-note">Mistakes notebook</span></div><div class="ui-stat"><span class="ui-stat-label">Today</span><strong class="ui-stat-value">${plan.done}<small> / ${plan.target}</small></strong><span class="ui-stat-note">${plan.items.length?`${plan.items.length} due`:"You're up to date"}</span></div></section>
   ${has?dailyCard():emptyBank()}
   <section aria-labelledby="ui-session-title"><div class="ui-section-title"><h2 id="ui-session-title">Choose your next session</h2><span>Your pace. Your progress.</span></div><div class="ui-quiz-grid"><article class="ui-quiz-card ui-quiz-primary"><div class="ui-quiz-head"><span class="icon">${ic("quiz")}</span><h3>Take a quiz</h3></div><p>Choose your subjects and subtopics. Build a focused session around what you want to learn.</p><div class="ui-quiz-foot"><span class="hint">${S.qs.length} questions to explore</span><button class="btn" data-act="startwiz" ${has?"":"disabled"}>Start quiz ${UI_ARROW}</button></div></article><article class="ui-quiz-card${ready?"":" locked"}"><div class="ui-quiz-head"><span class="icon">${ic("smart")}</span><h3>Smart Quiz</h3></div><p>Turn mistakes into progress with a mix of questions that need another look, highest priority first.</p><div class="ui-quiz-foot"><span class="hint">${ready?`${ready} mistakes ready to revisit`:mis?"All mistakes practised today":"Unlocks after your first mistake"}</span><button class="btn" data-act="smart" ${ready?"":"disabled"}>Revisit mistakes ${UI_ARROW}</button></div></article></div></section>
@@ -1319,7 +1345,7 @@ function render(){
   if(S.bankError){app.innerHTML=`<section class="card"><h2>Could not open your question bank</h2><p class="muted">${esc(S.bankError)}</p><p>Your question bank is unavailable until loading succeeds. Please retry.</p><div><button class="btn pri" data-act="retrybank">Retry</button></div></section>`;return;}
   let body;
   if(!S.ready)body=`<section class="card"><h2>Opening your question bank</h2><p class="muted">Loading your sets and progress.</p></section>`;
-  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="search"&&S.space==="cse"?viewCseSearch():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
+  else if(S.tab==="practice")body=S.quiz?viewQuiz():S.view==="search"&&isSearchSpace()?viewQuestionSearch():S.view==="daily"?viewDaily():S.view==="wiz"?viewWiz():S.view==="smart"?viewSmart():S.view==="tr"?viewTest():viewHome();
   else if(S.tab==="notebook")body=viewNotebook();
   else if(S.tab==="heat")body=viewHeat();
   else if(S.tab==="marks")body=viewMarks();

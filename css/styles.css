@@ -485,15 +485,15 @@ details.nbq[open] .dots{display:none}
 .focuslist .focus{min-height:104px;flex:none}
 .pal .chips{gap:6px}.pal .chips .pbtn{padding:6px 11px;font-size:13px}
 .scrolllist{max-height:340px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain}
-:root[data-space="cse"] .qtext{line-height:1.45}
-:root[data-space="cse"] .qlayout>section.card{gap:10px}
-:root[data-space="cse"] .opts,:root[data-space="cse"] .review-options{gap:8px}
-:root[data-space="cse"] .opt{padding:10px 14px;gap:12px}
-:root[data-space="cse"] .review-option{padding:12px 14px;gap:12px}
-:root[data-space="cse"] .review-option.right,:root[data-space="cse"] .review-option.wrong{padding:11px 13px}
-:root[data-space="cse"] .review-text{white-space:normal;line-height:1.45}
-:root[data-space="cse"] .nbbody{gap:10px}
-:root[data-space="cse"] details.nbq>summary{gap:10px}
+:root:is([data-space="cse"],[data-space="csat"]) .qtext{line-height:1.45}
+:root:is([data-space="cse"],[data-space="csat"]) .qlayout>section.card{gap:10px}
+:root:is([data-space="cse"],[data-space="csat"]) .opts,:root:is([data-space="cse"],[data-space="csat"]) .review-options{gap:8px}
+:root:is([data-space="cse"],[data-space="csat"]) .opt{padding:10px 14px;gap:12px}
+:root:is([data-space="cse"],[data-space="csat"]) .review-option{padding:12px 14px;gap:12px}
+:root:is([data-space="cse"],[data-space="csat"]) .review-option.right,:root:is([data-space="cse"],[data-space="csat"]) .review-option.wrong{padding:11px 13px}
+:root:is([data-space="cse"],[data-space="csat"]) .review-text{white-space:normal;line-height:1.45}
+:root:is([data-space="cse"],[data-space="csat"]) .nbbody{gap:10px}
+:root:is([data-space="cse"],[data-space="csat"]) details.nbq>summary{gap:10px}
 
 /* CSE search and compact daily quote card. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
