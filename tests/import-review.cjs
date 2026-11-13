@@ -28,6 +28,11 @@ function app() {
       deletePack:async p=>disk.delete(p.id),
       saveProg:async (id,items)=>progress.set(id,structuredClone(items))
     };
+    function menuHtml(){
+      const dialog={},originalGetter=document.getElementById;
+      document.getElementById=()=>dialog;
+      try{drawUiMenu();return dialog.innerHTML;}finally{document.getElementById=originalGetter;}
+    }
     function importFixture(id='new') {
       S.imp={text:'retry input',parsed:{id,title:'Replacement',questions:[{...question,text:'Replacement'}]},dups:[{no:1,choice:'new',old:{uid:'old:1'}}]};
     }
@@ -40,19 +45,19 @@ test('review marks toggle without changing selections, progress or bookmarks', (
 });
 test('keyboard activation of review controls never checks a selected Practice answer', () => {
   const run=app();
-  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});doPick('A');for(const act of ['markreview','marknext','reviewmarked'])for(const key of ['Enter',' '])events.keydown.forEach(fn=>fn({key,target:{tagName:'BUTTON',dataset:{act}},preventDefault(){throw Error('Native review control activation must remain available')}}));return !S.quiz.res['old:1']&&Object.keys(S.prog).length===0})()`),true);
+  assert.equal(run(`(()=>{startQuiz(['old:1'],{mode:'practice'});doPick('A');for(const act of ['markreview','reviewmarked'])for(const key of ['Enter',' '])events.keydown.forEach(fn=>fn({key,target:{tagName:'BUTTON',dataset:{act}},preventDefault(){throw Error('Native review control activation must remain available')}}));return !S.quiz.res['old:1']&&Object.keys(S.prog).length===0})()`),true);
 });
-test('Mark and Next works in both modes across all four question spaces', () => {
+test('Mark for review stays on the question in both modes across all four spaces', () => {
   const run=app();
-  assert.equal(run(`Object.keys(SPACES).every(space=>['practice','exam'].every(mode=>{S.space=space;const id=scopedPackId('review-paper');S.packs=[{id,questions:[question,{...question,no:2}]}];rebuild();S.prog={};const u=id+':1';startQuiz([u,id+':2'],{mode});doPick('A');S.quiz.rn[u]='My reasoning';markForReview(true);const Q=S.quiz;return Q.i===1&&markedCount(Q)===1&&(mode==='exam'?Q.ans[u]:Q.sel[u])==='A'&&Q.rn[u]==='My reasoning'&&Object.keys(S.prog).length===0&&!Q.res[u]&&!Q.skp[u]}))`),true);
+  assert.equal(run(`Object.keys(SPACES).every(space=>['practice','exam'].every(mode=>{S.space=space;const id=scopedPackId('review-paper');S.packs=[{id,questions:[question,{...question,no:2}]}];rebuild();S.prog={};const u=id+':1';startQuiz([u,id+':2'],{mode});doPick('A');S.quiz.rn[u]='My reasoning';markForReview();const Q=S.quiz;return Q.i===0&&!viewQuiz().includes('data-act="marknext"')&&markedCount(Q)===1&&(mode==='exam'?Q.ans[u]:Q.sel[u])==='A'&&Q.rn[u]==='My reasoning'&&Object.keys(S.prog).length===0&&!Q.res[u]&&!Q.skp[u]}))`),true);
 });
 test('marked navigation cycles and dismisses submission confirmation', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2},{...question,no:3});rebuild();startQuiz(['old:1','old:2','old:3'],{mode:'exam'});markForReview();goTo(2);markForReview();goTo(0);S.confirmFin=true;goToMarked();if(S.quiz.i!==2||S.confirmFin)return false;goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview();goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview(true);return S.quiz.i===0&&markedCount(S.quiz)===2})()`),true);
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2},{...question,no:3});rebuild();startQuiz(['old:1','old:2','old:3'],{mode:'exam'});markForReview();goTo(2);markForReview();goTo(0);S.confirmFin=true;goToMarked();if(S.quiz.i!==2||S.confirmFin)return false;goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview();goToMarked();if(S.quiz.i!==0)return false;goTo(2);markForReview();goToMarked();return S.quiz.i===0&&markedCount(S.quiz)===2})()`),true);
 });
 test('review flags do not change scoring or reveal answers before exam submission', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();startQuiz(['old:1','old:2'],{mode:'exam'});doPick('A');markForReview(true);markForReview();const hidden=!viewQuiz().includes('class="opt right"')&&!viewQuiz().includes('<span class="label">Solution</span>');const reminder=finishModal(S.quiz,true).includes('2 questions are still marked for review');finishQuiz();const Q=S.quiz;goToMarked();const review=Q.rv===0&&viewReview().includes('Marked for review');markForReview();return hidden&&reminder&&review&&Q.res['old:1'].ok&&Q.res['old:2'].skipped&&S.prog['old:1'].a===1&&S.prog['old:2'].sk===1&&markedCount(Q)===2&&viewResult().includes('Review marked (2)')})()`),true);
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();startQuiz(['old:1','old:2'],{mode:'exam'});doPick('A');markForReview();goTo(1);markForReview();const hidden=!viewQuiz().includes('class="opt right"')&&!viewQuiz().includes('<span class="label">Solution</span>');const reminder=finishModal(S.quiz,true).includes('2 questions are still marked for review');finishQuiz();const Q=S.quiz;goToMarked();const review=Q.rv===0&&viewReview().includes('Marked for review');markForReview();return hidden&&reminder&&review&&Q.res['old:1'].ok&&Q.res['old:2'].skipped&&S.prog['old:1'].a===1&&S.prog['old:2'].sk===1&&markedCount(Q)===2&&viewResult().includes('Review marked (2)')})()`),true);
 });
 test('marks reset for new attempts and never enter saved backups', () => {
   const run=app();
@@ -60,7 +65,7 @@ test('marks reset for new attempts and never enter saved backups', () => {
 });
 test('marking daily revision questions does not count as reviewing or skipping', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();S.prog={'old:1':{a:1,w:1,m:1,l:'w',t:1},'old:2':{a:1,w:1,m:1,l:'w',t:1}};const before=JSON.stringify(S.prog);startDailyReview();markForReview(true);finishQuiz();return before===JSON.stringify(S.prog)&&dailyPlan().done===0&&dailyPlan().items.length===2&&S.quiz.uids.every(u=>S.quiz.res[u].deferred)})()`),true);
+  assert.equal(run(`(()=>{S.packs[0].questions.push({...question,no:2});rebuild();S.prog={'old:1':{a:1,w:1,m:1,l:'w',t:1},'old:2':{a:1,w:1,m:1,l:'w',t:1}};const before=JSON.stringify(S.prog);startDailyReview();markForReview();finishQuiz();return before===JSON.stringify(S.prog)&&dailyPlan().done===0&&dailyPlan().items.length===2&&S.quiz.uids.every(u=>S.quiz.res[u].deferred)})()`),true);
 });
 test('failed replacement save preserves original questions and retry input', async () => {
   const run=app();
@@ -106,7 +111,7 @@ test('CAPF backup and analysis preserve the exam namespace', () => {
 });
 test('CAPF uses Static-style quiz screens without month controls', () => {
   const run=app();
-  assert.equal(run(`(()=>{S.space='capf';return monthBlock({})===''&&viewHome().includes('CAPF PYQ Practice')&&emptyBank().includes('CAPF PYQ JSON')&&header().indexOf('data-v="cse"')<header().indexOf('data-v="capf"')})()`),true);
+  assert.equal(run(`(()=>{S.space='capf';return monthBlock({})===''&&viewHome().includes('CAPF PYQ Practice')&&emptyBank().includes('CAPF PYQ JSON')&&menuHtml().indexOf('data-v="cse"')<menuHtml().indexOf('data-v="capf"')})()`),true);
 });
 test('imports accept alternative answer keys and reject invalid options', () => {
   const run=app();
@@ -238,4 +243,31 @@ test('all spaces use ordered topic cards with correct counts and selections', ()
 test('notebook overview counts open mistakes once per question and only in the active space', () => {
   const run=app();
   assert.equal(run(`(()=>{S.space='cse';S.packs=[{id:'cse::demo',questions:[{...question,subject:'Polity'},{...question,no:2,subject:'Polity'},{...question,no:3,subject:'Geography'},{...question,no:4,subject:'Geography'}]},{id:'capf::demo',questions:[question]}];S.prog={'cse::demo:1':{m:1,w:9},'cse::demo:2':{m:1,sk:2},'cse::demo:3':{m:1,w:1},'cse::demo:4':{m:0,w:3},'capf::demo:1':{m:1,w:1}};rebuild();const rows=notebookSubjects();return rows.length===2&&rows[0].subject==='Polity'&&rows[0].count===2&&rows[1].count===1&&notebookOverview().includes('2 subjects · Polity leads with 2')})()`),true);
+});
+
+test('dashboard uses only active-space data and leaves the bank and progress unchanged', () => {
+  const run=app();
+  assert.equal(run(`(()=>{
+    S.packs=[{id:'cse::paper',title:'CSE 2021',questions:[{...question,year:'2021'}]},{id:'capf::paper',questions:[question,{...question,no:2}]}];
+    S.prog={'cse::paper:1':{a:1,c:1,m:0},'capf::paper:1':{a:1,w:1,m:1}};
+    const before=JSON.stringify({packs:S.packs,prog:S.prog});
+    for(const space of Object.keys(SPACES)){
+      S.space=space;rebuild();const html=viewHome(),head=header(),menu=menuHtml();
+      if(!head.includes('Current practice section')||!head.includes('>'+spaceName()+'</span>')||head.includes('data-v="cse"')||!menu.includes('data-v="'+space+'"'))return false;
+      if(html.includes('Demo data')||html.includes('Design preview')||html.includes('Sample questions'))return false;
+      if((space==='cse')!==html.includes('data-feature-act="search-open"'))return false;
+      if(isExamSpace()&&html.indexOf('First attempts vs repeat practice')>html.indexOf(spaceName()+' PYQs by year'))return false;
+    }
+    return before===JSON.stringify({packs:S.packs,prog:S.prog});
+  })()`),true);
+});
+test('menu preserves account status, escapes email, and exposes sign out only for cloud storage', () => {
+  const run=app();
+  assert.equal(run(`(()=>{
+    S.ready=true;S.storage='cloud';S.user={email:'a<&@example.com'};
+    const cloud=menuHtml();
+    S.storage='browser';const local=menuHtml();
+    S.storage='account';const account=menuHtml();
+    return cloud.includes('a&lt;&amp;@example.com')&&cloud.includes('data-act="signout"')&&!local.includes('data-act="signout"')&&local.includes('Saved in this browser only')&&account.includes('Saved to your Claude account');
+  })()`),true);
 });

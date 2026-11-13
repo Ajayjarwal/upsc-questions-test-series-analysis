@@ -569,15 +569,63 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 const SUN=`<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 const MOON=`<svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
 const themeBtn=()=>`<button class="tgl" data-act="theme" aria-label="${S.theme==='light'?'Switch to dark mode':'Switch to light mode'}" title="${S.theme==='light'?'Dark mode':'Light mode'}">${S.theme==='light'?MOON:SUN}</button>`;
+const UI_ARROW='<svg class="ui-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-5-5 5 5-5 5"/></svg>';
+function storageStatus(){
+  if(!S.ready)return "Opening your bank...";
+  if(S.storage==="cloud")return `Signed in as ${esc(S.user?.email||"")} · <button class="linkbtn" data-act="signout" data-ui-menu="close">Sign out</button>`;
+  return S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
+}
 function header(){
   const open=openMistakes().length;
-  const tabs=[["practice","Practice"],["notebook","Notebook"],["heat","Heat map"],["marks","Bookmarks"],["import","Import"]];
-  const where=S.storage==="cloud"?`Signed in as ${esc(S.user&&S.user.email||"")} \u00b7 <button class="linkbtn" data-act="signout">Sign out</button>`:S.storage==="account"?"Saved to your Claude account":"Saved in this browser only";
-  return `<header class="site-header"><div class="site-header-top"><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">Solo Leveling</button><div class="hdr-r"><span class="status">${S.ready?where:"Opening your bank..."}</span>${themeBtn()}</div></div>
-  <div class="spaces-quote-row">
-  <div class="spaces" role="tablist" aria-label="Question space">${Object.entries(SPACES).map(([k,space])=>[k,space.label]).map(([k,l])=>`<button class="spc" role="tab" aria-selected="${S.space===k}" data-act="space" data-v="${k}">${l}</button>`).join("")}</div><div class="quote-dock">${quoteCard()}</div></div>
-  <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${l}${k==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav></header>`;
+  const tabs=[["practice","Practice","quiz"],["notebook","Notebook","notebook"],["heat","Heat map","heat"],["marks","Bookmarks","mark"],["import","Import","book"]];
+  return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${themeBtn()}</div></div>
+  <nav class="tabs ui-tabs" role="tablist" aria-label="Study tools">${tabs.map(([key,label,icon])=>`<button class="tab" role="tab" aria-selected="${S.tab===key}" data-act="tab" data-v="${key}">${icon?ic(icon):""}${label}${key==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav></header>`;
 }
+
+const UI_MENU_DETAILS={
+  static:{icon:"book",description:"Build your subject knowledge"},
+  ca:{icon:"heat",description:"Practise your monthly question sets"},
+  cse:{icon:"quiz",description:"Civil Services previous-year questions"},
+  capf:{icon:"flag",description:"CAPF previous-year questions"}
+};
+function uiMenuExpanded(open){
+  document.querySelector('[data-ui-menu="open"]')?.setAttribute("aria-expanded",String(open));
+}
+function drawUiMenu(){
+  const dialog=document.getElementById("ui-navigation-menu");
+  const dark=S.theme!=="light";
+  dialog.innerHTML='<div class="ui-menu-head"><h2 id="ui-menu-title">Menu</h2><div class="ui-menu-controls"><button id="ui-menu-theme" class="ui-menu-theme" data-act="theme" data-ui-menu="theme" role="switch" aria-checked="'+dark+'" aria-label="Dark theme">'+(dark?MOON:SUN)+'<span class="ui-menu-switch" aria-hidden="true"><span></span></span></button><button class="ui-menu-close" data-ui-menu="close" aria-label="Close navigation menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 14 14M19 5 5 19"/></svg></button></div></div><p class="ui-menu-caption">Choose your practice space</p><nav class="ui-menu-list" aria-label="Practice sections">'+Object.entries(SPACES).map(([key,space])=>{
+    const info=UI_MENU_DETAILS[key],active=S.space===key;
+    return '<button class="ui-menu-item" data-act="space" data-v="'+key+'" data-ui-menu="select"'+(active?' aria-current="page"':'')+'><span class="ui-menu-icon">'+ic(info.icon)+'</span><span class="ui-menu-copy"><strong>'+esc(space.label)+'</strong><small>'+esc(info.description)+'</small></span>'+(active?'<span class="ui-menu-current">Current</span>':'<svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>')+'</button>';
+  }).join("")+'</nav><div class="ui-menu-footer">'+storageStatus()+'</div>';
+}
+function ensureUiMenu(){
+  let dialog=document.getElementById("ui-navigation-menu");
+  if(dialog)return dialog;
+  dialog=document.createElement("dialog");
+  dialog.id="ui-navigation-menu";dialog.className="ui-menu";
+  dialog.setAttribute("aria-labelledby","ui-menu-title");
+  dialog.addEventListener("close",()=>{
+    document.body.classList.remove("ui-menu-open");
+    uiMenuExpanded(false);
+    document.querySelector('[data-ui-menu="open"]')?.focus();
+  });
+  dialog.addEventListener("click",event=>{
+    if(event.target!==dialog)return;
+    const rect=dialog.getBoundingClientRect();
+    if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close();
+  });
+  document.body.appendChild(dialog);return dialog;
+}
+function openUiMenu(){
+  const dialog=ensureUiMenu();
+  if(dialog.open)return;
+  drawUiMenu();dialog.showModal();
+  document.body.classList.add("ui-menu-open");uiMenuExpanded(true);
+  dialog.querySelector('[data-ui-menu="close"]').focus();
+}
+
+
 function emptyBank(){
   return `<section class="card"><h2>${isExamSpace()?`Your ${spaceName()} PYQ bank is empty`:"Your question bank is empty"}</h2>
   <p class="muted">${isExamSpace()?`Import your ${spaceName()} PYQ JSON files to begin. Subjects and sub-topics are created from each file.`:"Import a question set to begin. Each file creates its subject and sub-topic lists on its own."}</p>
@@ -666,26 +714,27 @@ function notebookOverview(){
   <p class="hint notebook-caption">${rows.length} subject${rows.length===1?"":"s"} · ${esc(lead.subject)} leads with ${lead.count}</p>`:`<p class="hint">No mistakes yet — questions you get wrong or skip land here automatically</p>`}
   <div class="notebook-action"><button class="btn pri" data-act="tab" data-v="notebook">Open Notebook</button></div></section>`;
 }
-function viewHome(){
-  const mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
-  const ready=smartPool("",{months:new Set(),mfrom:"",mto:""}).length;
-  const lp=latestPack(),fresh=lp?S.qs.filter(q=>q.packId===lp.id&&!(S.prog[q.uid]&&S.prog[q.uid].a)).length:0;
-  return `<div class="cse-page-title"><div class="field" style="gap:6px"><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Practice"}</h1><p class="muted">Test yourself on the question bank, then fix what you got wrong</p></div>${S.space==="cse"?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:""}</div>
-  ${has?"":emptyBank()}
-  ${has?dailyCard():""}
-  ${isExamSpace()?"":unattemptedCard()}
-  <div class="grid2">
-    <div class="card"><div class="icon">${ic("quiz")}</div><h2>Take Quiz</h2><p class="muted">Pick subjects and subtopics. Unattempted and incorrect questions come first</p><p class="hint">${S.qs.length} question${S.qs.length===1?"":"s"} in your bank</p><button class="btn pri full" data-act="startwiz" ${has?"":"disabled"}>Start Quiz</button></div>
-    <div class="card${ready?"":" locked"}"><div class="icon">${ic("smart")}</div><h2>Smart Quiz</h2><p class="muted">Reattempt your mistakes, high-priority questions first, topics mixed</p><p class="hint">${ready?`${ready} mistake${ready===1?"":"s"} ready to reattempt${mis>ready?` \u00b7 ${mis-ready} already done today`:""}`:mis?"All mistakes answered correctly today. They return tomorrow":"Unlocks once you get a question wrong"}</p><button class="btn pri full" data-act="smart" ${ready?"":"disabled"}>Start Smart Quiz</button></div>
-  </div>
-  ${notebookOverview()}
-  <div class="grid2">
-    <button class="card hubcard link" data-act="tab" data-v="marks"><div class="icon">${ic("mark")}</div><h3>Bookmarks</h3><p class="gold" style="font-weight:600">${saved} saved question${saved===1?"":"s"}</p></button>
-    <button class="card hubcard link" data-act="tab" data-v="heat"><div class="icon">${ic("heat")}</div><h3>Memory Heatmap</h3><p class="muted">See your strong, average and weak areas at a glance</p></button>
-  </div>
-  ${has?performanceCard():""}
-  ${isExamSpace()?pyqYearsCard():testsCard()}`;
+function uiNotebook(){
+  const rows=notebookSubjects(),total=rows.reduce((n,r)=>n+r.count,0);
+  return `<section class="ui-notebook" aria-labelledby="ui-notebook-title"><div class="ui-notebook-head"><div><h2 id="ui-notebook-title">Personal Mistakes Notebook</h2><p>A second look at the questions that need one.</p></div><div class="ui-notebook-number"><strong>${total}</strong><span>to revisit</span></div></div>
+  ${total?`<div class="notebook-distribution" role="img" aria-label="Mistakes by subject; counts are listed below">${rows.map(r=>`<span class="notebook-segment" style="flex-grow:${r.count};background:${r.colour}" title="${esc(r.subject)}: ${r.count}"></span>`).join("")}</div><ul class="notebook-legend">${rows.map(r=>`<li><span class="notebook-dot" style="background:${r.colour}" aria-hidden="true"></span><span class="notebook-subject">${esc(r.subject)}</span><strong>${r.count}</strong></li>`).join("")}</ul>`:`<p class="hint">Wrong and skipped questions will appear here after you practise.</p>`}
+  <div class="ui-notebook-foot"><span class="hint">${rows.length?`${rows.length} subjects · Your next chance to get it right`:"Your progress starts with one question"}</span><button class="btn" data-act="tab" data-v="notebook">Open notebook ${UI_ARROW}</button></div></section>`;
 }
+function viewHome(){
+  const plan=dailyPlan(),stats=stat(S.qs),mis=openMistakes().length,saved=bookmarks().length,has=S.qs.length>0;
+  const ready=smartPool("",{months:new Set()}).length,subjects=new Set(S.qs.map(q=>q.subject)).size;
+  const accuracy=stats.att?Math.round(stats.ok/stats.att*100):null;
+  return `<div class="ui-home"><section class="ui-hero"><div><div class="ui-overline">${esc(spaceName())} / Overview ${LOCAL_PREVIEW?'<span class="ui-context-label">Local preview</span>':""}</div><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Your practice dashboard"}</h1><p>Keep revision moving. Build a quiz, revisit mistakes, and see what sticks.</p></div>${S.space==="cse"?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:`<button class="btn" data-act="tab" data-v="import">+ Import questions</button>`}</section>
+  <section class="ui-stats" aria-label="Your practice at a glance"><div class="ui-stat"><span class="ui-stat-label">Questions</span><strong class="ui-stat-value">${S.qs.length}</strong><span class="ui-stat-note">${subjects} subject${subjects===1?"":"s"}</span></div><div class="ui-stat"><span class="ui-stat-label">Accuracy</span><strong class="ui-stat-value">${accuracy===null?"—":accuracy+"%"}</strong><span class="ui-stat-note">Latest answers · ${stats.att}</span></div><div class="ui-stat"><span class="ui-stat-label">To revisit</span><strong class="ui-stat-value">${mis}</strong><span class="ui-stat-note">Mistakes notebook</span></div><div class="ui-stat"><span class="ui-stat-label">Today</span><strong class="ui-stat-value">${plan.done}<small> / ${plan.target}</small></strong><span class="ui-stat-note">${plan.items.length?`${plan.items.length} due`:"You're up to date"}</span></div></section>
+  ${has?dailyCard():emptyBank()}
+  <section aria-labelledby="ui-session-title"><div class="ui-section-title"><h2 id="ui-session-title">Choose your next session</h2><span>Your pace. Your progress.</span></div><div class="ui-quiz-grid"><article class="ui-quiz-card ui-quiz-primary"><div class="ui-quiz-head"><span class="icon">${ic("quiz")}</span><h3>Take a quiz</h3></div><p>Choose your subjects and subtopics. Build a focused session around what you want to learn.</p><div class="ui-quiz-foot"><span class="hint">${S.qs.length} questions to explore</span><button class="btn" data-act="startwiz" ${has?"":"disabled"}>Start quiz ${UI_ARROW}</button></div></article><article class="ui-quiz-card${ready?"":" locked"}"><div class="ui-quiz-head"><span class="icon">${ic("smart")}</span><h3>Smart Quiz</h3></div><p>Turn mistakes into progress with a mix of questions that need another look, highest priority first.</p><div class="ui-quiz-foot"><span class="hint">${ready?`${ready} mistakes ready to revisit`:mis?"All mistakes practised today":"Unlocks after your first mistake"}</span><button class="btn" data-act="smart" ${ready?"":"disabled"}>Revisit mistakes ${UI_ARROW}</button></div></article></div></section>
+  <div class="ui-learning-grid">${uiNotebook()}<section class="ui-tools"><h2>Your study tools</h2><button class="ui-tool" data-act="tab" data-v="marks"><span class="icon">${ic("mark")}</span><span class="ui-tool-text"><strong>Bookmarks</strong><small>${saved} saved question${saved===1?"":"s"} for later</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="heat"><span class="icon">${ic("heat")}</span><span class="ui-tool-text"><strong>Memory heatmap</strong><small>Know where to focus next</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="import"><span class="icon">${ic("book")}</span><span class="ui-tool-text"><strong>Add to your question bank</strong><small>Import your practice files</small></span>${UI_ARROW}</button></section></div>
+  ${isExamSpace()?"":`<div class="unattempted-wrap">${unattemptedCard()}</div>`}
+  ${has?`<div class="ui-performance">${performanceCard()}</div>`:""}
+  <div class="ui-library">${isExamSpace()?pyqYearsCard():testsCard()}</div>
+  <footer class="ui-footer"><span>Solo Leveling · A little better, every day</span><span>${storageStatus()}</span></footer></div>`;
+}
+
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
     const entries=[...g.get(sub)],ks=entries.map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
@@ -816,7 +865,6 @@ function viewQuiz(){
   ${Q.kind==="Daily revision"?`<p class="hint">Daily revision · ${esc(dailyReason(S.prog[uid])?.label||"Review in progress")}</p>`:""}
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
-  <div class="row"><button class="btn sm review-jump" data-act="marknext">${ic("flag")}Mark &amp; Next</button><span class="hint">Flag a question to revisit during this attempt.</span></div>
   ${r&&r.skipped&&!exam?`<p class="note bad">Skipped. Added to your Notebook. You can still answer it.</p>`:""}
   ${cfRow}${!locked&&cur?`<div class="field"><label class="label" for="reasoning">Your reasoning (optional)</label><textarea id="reasoning" maxlength="2000" style="min-height:90px;font:inherit" placeholder="Why this option? Which options did you eliminate, and why?">${esc(Q.rn[uid]||"")}</textarea><p class="hint">Write a short explanation before revealing the solution. This note is not graded.</p></div>`:""}
   ${verdict}${locked?reasoningNote(r.reason):""}${whyRow}${locked?solution(q):""}
@@ -1340,11 +1388,11 @@ function doCheck(){
   render();
 }
 function goTo(k){const Q=S.quiz;if(!Q||Q.done||k<0||k>=Q.uids.length)return;tickQ();Q.i=k;render();window.scrollTo(0,0);}
-function markForReview(advance=false){
+function markForReview(){
   const Q=S.quiz;if(!Q||Q.done)return;
   const uid=Q.uids[Q.i];Q.marked=Q.marked||{};
-  if(advance)Q.marked[uid]=true;else if(Q.marked[uid])delete Q.marked[uid];else Q.marked[uid]=true;
-  if(advance)goTo((Q.i+1)%Q.uids.length);else render();
+  if(Q.marked[uid])delete Q.marked[uid];else Q.marked[uid]=true;
+  render();
 }
 function goToMarked(){
   const Q=S.quiz;if(!Q||!markedCount(Q))return;
@@ -1479,7 +1527,6 @@ document.addEventListener("click",async e=>{
     case "mvgonew":{const fm=el.closest(".moveform");await doMove(fm.dataset.u,el.dataset.s,fm.querySelector(".mvnew").value);break;}
     case "pick":doPick(v);break;
     case "markreview":markForReview();break;
-    case "marknext":markForReview(true);break;
     case "reviewmarked":goToMarked();break;
     case "skip":doSkip();break;
     case "check":doCheck();break;
@@ -1553,8 +1600,9 @@ document.addEventListener("change",e=>{
   else if(d==="custom"){tgt().custom=Math.max(1,Math.min(200,parseInt(e.target.value,10)||1));render();}
 });
 document.addEventListener("keydown",e=>{
+  if(document.getElementById("ui-navigation-menu")?.open)return;
   if(document.getElementById("quote-dialog")?.open)return;
-  if((e.key==="Enter"||e.key===" ")&&["markreview","marknext","reviewmarked"].includes(e.target?.dataset?.act))return;
+  if((e.key==="Enter"||e.key===" ")&&["markreview","reviewmarked"].includes(e.target?.dataset?.act))return;
   if(S.auth==="login"&&e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){authGo();e.preventDefault();return;}
   const Q=S.quiz;
   if(!Q&&S.tab==="practice"&&S.view==="tr"&&S.tr){
@@ -1599,6 +1647,18 @@ async function startCloud(user){
   S.user=user;S.auth="ok";S.authMsg=null;S.ready=false;render();
   await openBank(supaBackend(S.sb,user.id),"cloud");
 }
+document.addEventListener("click",event=>{
+  const control=event.target.closest("[data-ui-menu]");
+  if(!control)return;
+  const action=control.dataset.uiMenu;
+  if(action==="open")openUiMenu();
+  else if(action==="close"||action==="select")document.getElementById("ui-navigation-menu")?.close();
+  else if(action==="theme"){
+    drawUiMenu();uiMenuExpanded(true);
+    document.getElementById("ui-menu-theme").focus();
+  }
+});
+
 render();
 (async function boot(){
   if(LOCAL_PREVIEW){S.auth="none";await openBank(localBackend("recall-desk-preview-v1"),"browser");return;}
