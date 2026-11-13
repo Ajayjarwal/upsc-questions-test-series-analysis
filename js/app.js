@@ -55,6 +55,12 @@ function chunkQs(qs){
 function dbBackend(db,uid){
   const col=db.collection("data/users/"+uid);
   return {
+    quoteOwner:"account:"+uid,
+    async loadQuotes(){const doc=await col.doc("quotes").get();return doc.data()?.quotes??null;},
+    async saveQuotes(quotes,{onlyIfMissing=false}={}){
+      if(onlyIfMissing){const saved=await this.loadQuotes();if(saved!==null)return saved;}
+      await col.doc("quotes").set({kind:"quotes",quotes});return quotes;
+    },
     async load(){
       const snap=await col.limit(1000).get();const map={},prog={};
       snap.docs.forEach(d=>{const x=d.data()||{};
@@ -87,6 +93,18 @@ function localBackend(K="recall-desk-v1"){
 function supaBackend(sb,uid){
   const ck=r=>{if(r.error)throw new Error(r.error.message||"Database error");return r.data||[];};
   return {
+    quoteOwner:"cloud:"+uid,
+    async loadQuotes(){
+      const r=await sb.from("quote_collections").select("quotes").eq("user_id",uid).maybeSingle();
+      if(r.error)throw Object.assign(new Error(r.error.message),{code:r.error.code});
+      return r.data?.quotes??null;
+    },
+    async saveQuotes(quotes,{onlyIfMissing=false}={}){
+      const r=await sb.from("quote_collections").upsert({user_id:uid,quotes,updated_at:new Date().toISOString()},{onConflict:"user_id",ignoreDuplicates:onlyIfMissing}).select("quotes");
+      if(r.error)throw Object.assign(new Error(r.error.message),{code:r.error.code});
+      // An initial migration must never replace a collection saved on another device.
+      return r.data?.[0]?.quotes??await this.loadQuotes();
+    },
     async load(){
       const pk=ck(await sb.from("packs").select("id,title,sample,ts,questions"));
       const pr=ck(await sb.from("progress").select("pack_id,items"));
@@ -504,33 +522,116 @@ function parseQuoteJson(text){
     return {text:quote.trim(),author:author.trim()};
   });
 }
-let dailyQuotes=(()=>{try{const raw=localStorage.getItem(QUOTES_KEY);return raw?parseQuoteJson(raw):structuredClone(DEFAULT_QUOTES);}catch(e){return structuredClone(DEFAULT_QUOTES);}})();
+function readQuoteCache(key){try{const raw=localStorage.getItem(key);return raw?parseQuoteJson(raw):null;}catch(e){return null;}}
+let dailyQuotes=readQuoteCache(QUOTES_KEY)||structuredClone(DEFAULT_QUOTES);
+let quoteSync={state:"browser",owner:"",hasRemote:false,error:""},quoteGeneration=0,quoteSaving=false;
+const accountQuoteMode=mode=>mode==="cloud"||mode==="account";
+const quoteCacheKey=owner=>QUOTES_KEY+":"+owner;
+function cacheAccountQuotes(owner,quotes){try{localStorage.setItem(quoteCacheKey(owner),JSON.stringify(quotes));}catch(e){/* The backend remains the source of truth if caching is blocked. */}}
+function legacyQuotesFor(owner,claim=false){
+  try{
+    const previous=localStorage.getItem(QUOTES_KEY+":legacy-owner");
+    if(previous&&previous!==owner)return null;
+    const quotes=readQuoteCache(QUOTES_KEY);
+    if(quotes&&claim)localStorage.setItem(QUOTES_KEY+":legacy-owner",owner);
+    return quotes;
+  }catch(e){return null;}
+}
+function quoteSyncError(error){
+  return ["PGRST205","42P01"].includes(error?.code)?"Account quote storage needs its one-time setup. Your browser quotes are safe.":"Quotes could not sync with your account. Please retry. "+(error?.message||"");
+}
+async function loadStoredQuotes(store,mode,{migrate=true}={}){
+  const generation=++quoteGeneration,owner=store?.quoteOwner||"";
+  quoteSync={state:accountQuoteMode(mode)?"loading":"browser",owner,hasRemote:false,error:""};
+  dailyQuotes=(accountQuoteMode(mode)?readQuoteCache(quoteCacheKey(owner)):readQuoteCache(QUOTES_KEY))||structuredClone(DEFAULT_QUOTES);
+  if(!accountQuoteMode(mode))return;
+  try{
+    if(!owner||!store.loadQuotes)throw Error("Account quote storage is unavailable.");
+    let saved=await store.loadQuotes();
+    if(generation!==quoteGeneration)return;
+    if(migrate){
+      const previous=legacyQuotesFor(owner,true);
+      if(saved===null&&previous){
+        dailyQuotes=previous;
+        saved=await store.saveQuotes(previous,{onlyIfMissing:true});
+        if(saved===null)throw Error("Your browser quotes have not reached the account yet.");
+      }
+    }
+    if(generation!==quoteGeneration)return;
+    if(saved!==null){dailyQuotes=parseQuoteJson(JSON.stringify(saved));cacheAccountQuotes(owner,dailyQuotes);}
+    else dailyQuotes=structuredClone(DEFAULT_QUOTES);
+    quoteSync={state:"ready",owner,hasRemote:saved!==null,error:""};
+  }catch(error){
+    if(generation===quoteGeneration)quoteSync={state:"error",owner,hasRemote:false,error:quoteSyncError(error)};
+  }
+}
+async function persistQuoteCollection(rows){
+  if(quoteSaving)return false;
+  const valid=parseQuoteJson(JSON.stringify(rows)),store=S.store,mode=S.storage,generation=quoteGeneration,owner=quoteSync.owner;
+  quoteSaving=true;
+  try{
+    let saved=valid;
+    if(accountQuoteMode(mode)){
+      if(!store?.saveQuotes||!owner||owner!==store.quoteOwner)throw Error("Sign in again to save quotes to your account.");
+      quoteSync={...quoteSync,state:"saving",error:""};
+      const result=await store.saveQuotes(valid);
+      if(generation!==quoteGeneration||S.store!==store)return false;
+      saved=parseQuoteJson(JSON.stringify(result));
+      cacheAccountQuotes(owner,saved);
+      // Preserve the previous browser collection as a recoverable copy, owned by this account.
+      legacyQuotesFor(owner,true);
+      quoteSync={state:"ready",owner,hasRemote:true,error:""};
+    }else localStorage.setItem(QUOTES_KEY,JSON.stringify(valid));
+    dailyQuotes=saved;return true;
+  }catch(error){
+    if(generation!==quoteGeneration)return false;
+    if(accountQuoteMode(mode))quoteSync={...quoteSync,state:"error",error:quoteSyncError(error)};
+    throw error;
+  }finally{if(generation===quoteGeneration)quoteSaving=false;}
+}
+function quoteStorageLabel(){
+  if(!accountQuoteMode(S.storage))return "Saved in this browser only";
+  if(quoteSync.state==="saving")return "Saving to your account…";
+  if(quoteSync.state==="loading")return "Loading your account quotes…";
+  if(quoteSync.state==="error")return "Not synced · your draft stays here";
+  return quoteSync.hasRemote?"Saved to your account · available on your devices":"Quotes will save to your account";
+}
+function resetQuoteSession(){
+  quoteGeneration++;quoteSaving=false;quoteSync={state:"browser",owner:"",hasRemote:false,error:""};dailyQuotes=structuredClone(DEFAULT_QUOTES);quoteDraft=[];
+  const dialog=document.getElementById("quote-dialog");if(dialog?.open)dialog.close();
+}
 function quoteForDay(quotes,date=new Date()){
   const day=Math.floor(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())/86400000);
   return quotes[((day%quotes.length)+quotes.length)%quotes.length];
 }
 function quoteCard(){
   const quote=quoteForDay(dailyQuotes);
-  return `<aside class="quote-card" aria-label="Quote of the day" title="${esc(quote.text+(quote.author?' — '+quote.author:''))}"><span class="quote-label">Quote of the day</span><p class="quote-copy"><em>“${esc(quote.text)}”</em></p><div class="quote-bottom">${quote.author?`<span class="quote-author">— ${esc(quote.author)}</span>`:""}<button class="quote-edit" data-feature-act="quote-edit" aria-label="Edit quote collection" title="Edit all quotes">${EDIT_ICON}</button></div></aside>`;
+  return `<aside class="quote-card" aria-label="Quote of the day" title="${esc(quote.text+(quote.author?' — '+quote.author:''))}"><span class="quote-label">Quote of the day${quoteSync.state==="error"?'<span class="quote-sync-warning"> · Not synced</span>':""}</span><p class="quote-copy"><em>“${esc(quote.text)}”</em></p><div class="quote-bottom">${quote.author?`<span class="quote-author">— ${esc(quote.author)}</span>`:""}<button class="quote-edit" data-feature-act="quote-edit" aria-label="Edit quote collection" title="Edit all quotes">${EDIT_ICON}</button></div></aside>`;
 }
 let quoteDraft=[],quoteTrigger=null;
 function quoteEntry(q,i){return `<section class="quote-entry"><div class="row sp"><label class="label" for="quote-text-${i}">Quote ${i+1}</label><button type="button" class="linkbtn" data-feature-act="quote-remove" data-value="${i}" aria-label="Remove quote ${i+1}">Remove</button></div><textarea id="quote-text-${i}" data-quote-text="${i}" maxlength="2000" aria-label="Quote ${i+1} text">${esc(q.text)}</textarea><input class="txt" data-quote-author="${i}" maxlength="160" value="${esc(q.author)}" placeholder="Author (optional)" aria-label="Quote ${i+1} author"></section>`;}
 function drawQuoteEditor(){
   const dialog=document.getElementById("quote-dialog");
-  dialog.innerHTML=`<form id="quote-editor-form" class="quote-editor-layout"><div class="row sp"><h2 id="quote-editor-title">Your daily quotes</h2><button type="button" class="quote-close" data-feature-act="quote-cancel" aria-label="Close quote editor">×</button></div><p class="quote-editor-intro">One quote each day, rotating through your collection. Edit any quote or import your own JSON file.</p><div class="row"><button type="button" class="btn sm" data-feature-act="quote-import">Import JSON</button><button type="button" class="btn sm" data-feature-act="quote-add">+ Add quote</button><span class="hint">${quoteDraft.length} quote${quoteDraft.length===1?"":"s"}</span></div><input type="file" id="quote-json-file" accept=".json,application/json" hidden><p id="quote-error" class="quote-error" role="alert"></p><div class="quote-list">${quoteDraft.map(quoteEntry).join("")||`<p class="muted">Add at least one quote before saving.</p>`}</div><details><summary class="hint">Supported JSON format</summary><pre class="quote-json-format">${esc(JSON.stringify({quotes:[{text:"Your quote here",author:"Author name"}]},null,2))}</pre><p class="hint" style="margin-top:8px">A list of plain quote strings also works. Import replaces this draft collection; Save applies it.</p></details><footer class="quote-editor-footer"><div class="row sp"><span class="hint">Saved in this browser only</span><div class="row"><button type="button" class="btn sm" data-feature-act="quote-cancel">Cancel</button><button type="submit" class="btn pri sm">Save quotes</button></div></div></footer></form>`;
+  const previous=accountQuoteMode(S.storage)?legacyQuotesFor(quoteSync.owner):null;
+  const recover=previous&&JSON.stringify(previous)!==JSON.stringify(dailyQuotes);
+  dialog.innerHTML=`<form id="quote-editor-form" class="quote-editor-layout"><div class="row sp"><h2 id="quote-editor-title">Your daily quotes</h2><button type="button" class="quote-close" data-feature-act="quote-cancel" aria-label="Close quote editor">×</button></div><p class="quote-editor-intro">One quote each day, rotating through your collection. Edit any quote or import your own JSON file.</p><div class="row"><button type="button" class="btn sm" data-feature-act="quote-import">Import JSON</button><button type="button" class="btn sm" data-feature-act="quote-add">+ Add quote</button>${recover?'<button type="button" class="btn sm" data-feature-act="quote-browser-import">Import browser quotes</button>':""}<span class="hint">${quoteDraft.length} quote${quoteDraft.length===1?"":"s"}</span></div><input type="file" id="quote-json-file" accept=".json,application/json" hidden><p id="quote-error" class="quote-error" role="alert"></p><div class="quote-list">${quoteDraft.map(quoteEntry).join("")||`<p class="muted">Add at least one quote before saving.</p>`}</div><details><summary class="hint">Supported JSON format</summary><pre class="quote-json-format">${esc(JSON.stringify({quotes:[{text:"Your quote here",author:"Author name"}]},null,2))}</pre><p class="hint" style="margin-top:8px">A list of plain quote strings also works. Import replaces this draft collection; Save applies it.</p></details><footer class="quote-editor-footer"><div class="row sp"><span class="hint" role="status" aria-live="polite">${esc(quoteStorageLabel())}</span><div class="row"><button type="button" class="btn sm" data-feature-act="quote-cancel">Cancel</button><button type="submit" class="btn pri sm">Save quotes</button></div></div></footer></form>`;
+  dialog.querySelectorAll("button,input,textarea").forEach(control=>{control.disabled=quoteSaving;});
 }
 function ensureQuoteDialog(){
   if(document.getElementById("quote-dialog"))return;
   const dialog=document.createElement("dialog");dialog.id="quote-dialog";dialog.className="quote-dialog";dialog.setAttribute("aria-labelledby","quote-editor-title");document.body.appendChild(dialog);
-  dialog.addEventListener("cancel",()=>{quoteDraft=[];});
+  dialog.addEventListener("cancel",event=>{if(quoteSaving){event.preventDefault();return;}quoteDraft=[];});
 }
 function openQuoteEditor(trigger){
+  if(!S.ready||quoteSync.state==="loading"){toast("Your quotes are still loading. Please try again in a moment.");return;}
   ensureQuoteDialog();quoteDraft=structuredClone(dailyQuotes);quoteTrigger=trigger;drawQuoteEditor();document.getElementById("quote-dialog").showModal();
+  if(quoteSync.error)document.getElementById("quote-error").textContent=quoteSync.error;
 }
 function closeQuoteEditor(){document.getElementById("quote-dialog").close();quoteTrigger?.focus();}
 function runCseSearch(value){CSE_SEARCH.query=String(value).trim().slice(0,160);CSE_SEARCH.draft=CSE_SEARCH.query;CSE_SEARCH.page=1;render();}
 document.addEventListener("click",e=>{
   const el=e.target.closest("[data-feature-act]");if(!el)return;
+  if(quoteSaving&&el.dataset.featureAct.startsWith("quote-"))return;
   switch(el.dataset.featureAct){
     case "search-open":if(S.space!=="cse")return;S.view="search";S.tab="practice";S.quiz=null;render();document.getElementById("cse-search-input").focus();window.scrollTo(0,0);break;
     case "search-back":S.view="home";render();window.scrollTo(0,0);break;
@@ -541,6 +642,7 @@ document.addEventListener("click",e=>{
     case "quote-add":if(quoteDraft.length>=500){document.getElementById("quote-error").textContent="The collection can contain up to 500 quotes.";break;}quoteDraft.push({text:"",author:""});drawQuoteEditor();document.getElementById("quote-text-"+(quoteDraft.length-1)).focus();break;
     case "quote-remove":quoteDraft.splice(Number(el.dataset.value),1);drawQuoteEditor();break;
     case "quote-import":document.getElementById("quote-json-file").click();break;
+    case "quote-browser-import":{const previous=legacyQuotesFor(quoteSync.owner);if(previous){quoteDraft=structuredClone(previous);drawQuoteEditor();}break;}
   }
 });
 document.addEventListener("input",e=>{
@@ -555,15 +657,29 @@ document.addEventListener("change",async e=>{
   try{if(file.size>1048576)throw Error("Choose a JSON file smaller than 1 MB.");const imported=parseQuoteJson(await file.text());if(!document.getElementById("quote-dialog").open)return;quoteDraft=imported;drawQuoteEditor();}
   catch(err){document.getElementById("quote-error").textContent=err instanceof SyntaxError?"This file is not valid JSON. Your saved quotes have not changed.":err.message;}
 });
-document.addEventListener("submit",e=>{
+document.addEventListener("submit",async e=>{
   if(e.target.id==="cse-search-form"){e.preventDefault();if(S.space==="cse")runCseSearch(document.getElementById("cse-search-input").value);}
   if(e.target.id==="quote-editor-form"){
-    e.preventDefault();try{const valid=parseQuoteJson(JSON.stringify(quoteDraft));localStorage.setItem(QUOTES_KEY,JSON.stringify(valid));dailyQuotes=valid;closeQuoteEditor();render();document.querySelector('[data-feature-act="quote-edit"]')?.focus();toast("Quote collection saved in this browser");}
-    catch(err){document.getElementById("quote-error").textContent=err.message;}
+    e.preventDefault();if(quoteSaving)return;
+    const generation=quoteGeneration;
+    try{
+      parseQuoteJson(JSON.stringify(quoteDraft));
+      document.getElementById("quote-error").textContent="";
+      const pending=persistQuoteCollection(quoteDraft);drawQuoteEditor();
+      if(!await pending)return;
+      closeQuoteEditor();render();document.querySelector('[data-feature-act="quote-edit"]')?.focus();toast(accountQuoteMode(S.storage)?"Quote collection saved to your account":"Quote collection saved in this browser");
+    }catch(err){
+      if(generation!==quoteGeneration)return;
+      drawQuoteEditor();document.getElementById("quote-error").textContent=quoteSync.error||err.message;
+    }
   }
 });
 // Refresh the daily card after midnight when the page becomes visible again.
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!document.getElementById("quote-dialog")?.open&&!S.quiz){const card=document.querySelector(".quote-card");if(card)card.outerHTML=quoteCard();}});
+document.addEventListener("visibilitychange",async()=>{
+  if(document.visibilityState!=="visible"||document.getElementById("quote-dialog")?.open||S.quiz||quoteSaving)return;
+  if(S.store&&accountQuoteMode(S.storage))await loadStoredQuotes(S.store,S.storage,{migrate:false});
+  const card=document.querySelector(".quote-card");if(card)card.outerHTML=quoteCard();
+});
 
 /* ---------- view helpers ---------- */
 const SUN=`<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
@@ -1268,7 +1384,7 @@ async function authMagic(){
   const r=await S.sb.auth.signInWithOtp({email,options:{emailRedirectTo:authBack()}});
   S.authMsg=r.error?{text:r.error.message,bad:1}:{text:"Login link sent. Open it on this device."};render();
 }
-function resetData(){S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();}
+function resetData(){S.store=null;S.storage="browser";S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();resetQuoteSession();}
 
 /* ---------- backup ---------- */
 function buildBackup(){
@@ -1638,12 +1754,14 @@ async function openBank(store,mode){
   try{
     const d=await store.load();S.packs=d.packs;rebuild();applyProg(d.prog);
     S.store=store;S.ready=true;S.bankRetry=null;
+    const quotesReady=loadStoredQuotes(store,mode);render();await quotesReady;
   }catch(e){
     S.bankError="Could not load your "+(mode==="cloud"||mode==="account"?"account":"browser")+" data: "+((e&&e.message)||"unknown error");
   }
   render();
 }
 async function startCloud(user){
+  if(S.user?.id!==user.id)resetQuoteSession();
   S.user=user;S.auth="ok";S.authMsg=null;S.ready=false;render();
   await openBank(supaBackend(S.sb,user.id),"cloud");
 }

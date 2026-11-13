@@ -826,3 +826,6 @@ body.ui-menu-open{overflow:hidden}
 
 .ui-menu-footer{overflow-wrap:anywhere}
 .ui-menu-footer .linkbtn{color:var(--gold)}
+
+.quote-sync-warning{color:var(--gold);text-transform:none;letter-spacing:0}
+.quote-editor-layout button:disabled{opacity:.6;cursor:wait}
