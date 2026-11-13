@@ -6,6 +6,8 @@ const TEMPLATE = JSON.stringify({
   subject:"Geography",
   questions:[{no:1,topic:"Soils",question:"Which soil is also called regur soil?",options:{A:"Alluvial",B:"Black",C:"Red",D:"Laterite"},answer:"B",explanation:"Full solution text. **Bold** and lines starting with '- ' are supported.",summary:"One-line note-ready takeaway.",sources:["https://ncert.nic.in/..."],images:[{src:"images/q1-solution.png",caption:"Soil profile"}],question_images:["images/q1-map.png"]}]
 },null,2);
+const CSAT_TEMPLATE=JSON.stringify({"schema": "recall-desk/1", "paper": {"id": "csat-source-format-example", "title": "CSAT format example — replace with your PYQs", "year": 2021}, "source_exam": "CAPF", "subject": "Quantitative Aptitude", "questions": [{"no": 1, "topic": "Percentages", "question": "What is 20% of 200?", "options": {"A": "20", "B": "30", "C": "40", "D": "50"}, "answer": "C", "explanation": "20/100 × 200 = 40."}, {"no": 2, "source_exam": "CSE", "year": 2020, "topic": "Ratio and proportion", "question": "Two numbers are in the ratio 2:3 and their sum is 50. What is the smaller number?", "options": {"A": "10", "B": "20", "C": "25", "D": "30"}, "answer": "B", "explanation": "The smaller number is 2/(2+3) × 50 = 20."}]},null,2);
+const importTemplate=()=>S.space==="csat"?CSAT_TEMPLATE:TEMPLATE;
 const BUCKETS=[["b0","Not attempted"],["b1","Under 40%"],["b2","40-59%"],["b3","60-79%"],["b4","80% and above"]];
 const MAXSUBJ=3;
 /* Hosting config. Fill these in when you deploy (see README). Leave empty to run without a login (Claude account or this browser). */
@@ -135,6 +137,18 @@ function spacePacks(){return S.packs.filter(p=>inSpace(p.id));}
 function spaceName(){return SPACES[S.space].label;}
 const isExamSpace=()=>["capf","cse","csat"].includes(S.space);
 const isSearchSpace=()=>S.space==="cse"||S.space==="csat";
+function normalizeSourceExam(value){
+  if(value===undefined||value===null||value==="")return "";
+  if(typeof value!=="string")return null;
+  const exam=value.trim().toUpperCase();return !exam?"":["CSE","CAPF"].includes(exam)?exam:null;
+}
+const questionSourceExam=q=>normalizeSourceExam(q.source_exam??q.exam)||"";
+const sourceExamOk=(o,q)=>S.space!=="csat"||!o?.sourceExam||(o.sourceExam==="untagged"?!questionSourceExam(q):questionSourceExam(q)===o.sourceExam);
+const sourceExamBadge=q=>S.space==="csat"&&questionSourceExam(q)?`<span class="tag plain" title="Source exam">${questionSourceExam(q)}</span>`:"";
+function sourceExamBlock(o,scope){
+  if(S.space!=="csat")return "";
+  return `<div class="field"><span class="label">Source exam</span><div class="seg" role="group" aria-label="Source exam">${[["","All sources"],["CSE","CSE"],["CAPF","CAPF"],["untagged","Untagged"]].map(([value,label])=>`<button aria-pressed="${(o?.sourceExam||"")===value}" data-act="sourceexam" data-scope="${scope}" data-v="${value}">${label}</button>`).join("")}</div><p class="hint">Read from the JSON source_exam tag. All sources includes older questions without a tag.</p></div>`;
+}
 const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const curMonth=()=>mKey(Date.now());
 function mKey(ts){const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
@@ -152,7 +166,7 @@ function monthBlock(o){
 function rebuild(){
   S.qs=[];S.byUid=new Map();
   for(const p of S.packs){if(!inSpace(p.id))continue;for(const q of p.questions){
-    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",mo:q.mo||(p.ts?mKey(p.ts):"")};
+    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",source_exam:questionSourceExam(q),mo:q.mo||(p.ts?mKey(p.ts):"")};
     S.qs.push(x);S.byUid.set(x.uid,x);
   }}
 }
@@ -309,6 +323,8 @@ function parseImport(text){
   arr.forEach((r,i)=>{
     const lab="Question "+((r&&r.no)!==undefined?r.no:i+1);
     if(!r||typeof r!=="object"){errors.push(lab+": not an object");return;}
+    const sourceExam=normalizeSourceExam([r.source_exam,r.exam,paper.source_exam,paper.exam,meta.source_exam,meta.exam,mm.source_exam,mm.exam].find(value=>value!==undefined&&value!==null&&!(typeof value==="string"&&!value.trim())));
+    if(sourceExam===null&&S.space==="csat"){errors.push(lab+': source_exam must be "CSE" or "CAPF"');return;}
     const subject=String(r.subject||topSubject).trim();
     if(!subject){errors.push(lab+": no subject");return;}
     const text=String(r.question||r.q||"").trim();
@@ -328,7 +344,7 @@ function parseImport(text){
     src=src.map(x=>String(x).trim()).filter(Boolean);
     let expl=String(r.explanation||r.exp||"").trim();
     if(src.length)expl=expl.split("\n").filter(l=>!/^\s*\*\*\s*News\s*:/i.test(l)).join("\n").trim();
-    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||meta.year||mm.year||"")});
+    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||meta.year||mm.year||""),...(sourceExam?{source_exam:sourceExam}:{})});
   });
   out.sort((a,b)=>a.no-b.no);
   return {id,title,questions:out,errors,month:fileMonth};
@@ -483,7 +499,7 @@ function searchPlan(query,related=true){
 function searchQuestions(query,related=true){
   if(!isSearchSpace())return [];
   const plan=searchPlan(query,related);if(!plan.tokens.length)return [];
-  return S.qs.flatMap(q=>{
+  return S.qs.filter(q=>sourceExamOk(activeSearch(),q)).flatMap(q=>{
     const fields=[{name:"Question",value:q.text},{name:"Options",value:Object.values(q.options||{}).join(" ")},{name:"Solution",value:[q.exp,q.sum].filter(Boolean).join("\n")}].map(f=>({...f,normal:searchNormalize(f.value)}));
     const directFields=fields.filter(f=>plan.tokens.every(t=>hasSearchPhrase(f.normal,t)));
     const labels=[{name:"Topic label",value:q.topic},{name:"Subject label",value:q.subject}].map(f=>({...f,normal:searchNormalize(f.value)}));
@@ -515,7 +531,7 @@ function searchExcerpt(text,terms){
 }
 function searchResult(row){
   const {q,direct,fields,terms,excerpt}=row,pack=S.packs.find(p=>p.id===q.packId);
-  return `<article class="search-result"><div class="row sp"><div class="qmeta"><span class="tag">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}</div><span class="tag${direct?"":" plain"}">${direct?"Keyword match":"Related topic"}</span></div>
+  return `<article class="search-result"><div class="row sp"><div class="qmeta"><span class="tag">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}</div><span class="tag${direct?"":" plain"}">${direct?"Keyword match":"Related topic"}</span></div>
     <p class="match-note">${esc(pack?.title||"Imported set")} · Q${q.no} · Found in ${esc(fields.join(" + ").toLowerCase())}</p>
     <h3>${searchHighlight(questionDisplayText(q.text),terms)}</h3>
     ${excerpt?`<p class="search-excerpt"><strong>Solution excerpt</strong><br>${searchHighlight(searchExcerpt(excerpt,terms),terms)}</p>`:""}
@@ -529,8 +545,9 @@ function viewQuestionSearch(){
     <section class="card search-box"><div class="row sp"><span class="label gold">Explore your ${spaceName()} question bank</span>${SEARCH_ICON}</div><h1>Has this topic appeared before?</h1><p class="muted">Find words and related topics in your imported questions, options and solutions.</p>
     <form id="question-search-form" class="search-form" role="search"><label class="sr-only" for="question-search-input">Search ${spaceName()} questions</label><input class="txt" id="question-search-input" type="search" maxlength="160" value="${esc(activeSearch().draft)}" placeholder="${csat?"Try percentages, comprehension, syllogisms…":"Try federalism, inflation, Buddhism…"}" autocomplete="off"><button class="btn pri" type="submit">Search questions</button></form>
     <div class="search-controls"><label><input id="search-related" type="checkbox" ${related?"checked":""}> Include related topics</label><span class="hint">Questions + options + solutions</span></div>
+    ${sourceExamBlock(activeSearch(),"search")}
     <div class="search-chips"><span class="hint">Try</span>${examples.map(t=>`<button class="chip" data-feature-act="search-suggestion" data-value="${esc(t)}">${esc(t)}</button>`).join("")}</div></section>
-    ${query?`<div class="field" style="gap:8px" role="status"><div class="row sp"><h2>${rows.length} result${rows.length===1?"":"s"} for “${esc(query)}”</h2><span class="hint">${S.qs.length} ${spaceName()} questions searched</span></div><div class="search-counts"><span class="tag">${exact} keyword match${exact===1?"":"es"}</span>${related?`<span class="tag plain">${relatedCount} related-topic match${relatedCount===1?"":"es"}</span>`:""}</div>${plan.aliases.length?`<p class="hint">Also looking for: ${esc(plan.aliases.slice(0,6).join(", "))}${plan.aliases.length>6?"…":""}</p>`:""}</div>`:`<section class="card flat"><h2>Follow a topic across papers</h2><p class="muted">${csat?"Search “percentages” to find direct mentions and related terms such as percent and percentage change.":"Search “federalism” to find direct mentions, plus related terms such as Centre–State relations and the Seventh Schedule."}</p></section>`}
+    ${query?`<div class="field" style="gap:8px" role="status"><div class="row sp"><h2>${rows.length} result${rows.length===1?"":"s"} for “${esc(query)}”</h2><span class="hint">${S.qs.filter(q=>sourceExamOk(activeSearch(),q)).length} ${spaceName()} questions searched</span></div><div class="search-counts"><span class="tag">${exact} keyword match${exact===1?"":"es"}</span>${related?`<span class="tag plain">${relatedCount} related-topic match${relatedCount===1?"":"es"}</span>`:""}</div>${plan.aliases.length?`<p class="hint">Also looking for: ${esc(plan.aliases.slice(0,6).join(", "))}${plan.aliases.length>6?"…":""}</p>`:""}</div>`:`<section class="card flat"><h2>Follow a topic across papers</h2><p class="muted">${csat?"Search “percentages” to find direct mentions and related terms such as percent and percentage change.":"Search “federalism” to find direct mentions, plus related terms such as Centre–State relations and the Seventh Schedule."}</p></section>`}
     ${query&&!rows.length?`<section class="card flat"><h2>No matching questions in this bank</h2><p class="muted">Try a shorter keyword or import more ${spaceName()} papers. No match here does not mean a topic has never appeared in UPSC.</p></section>`:""}
     ${rows.slice((current-1)*size,current*size).map(searchResult).join("")}
     ${pages>1?`<nav class="search-pagination" aria-label="Search result pages"><button class="btn sm" data-feature-act="search-page" data-value="${current-1}" ${current===1?"disabled":""}>Previous</button><span class="hint">${current} / ${pages}</span><button class="btn sm" data-feature-act="search-page" data-value="${current+1}" ${current===pages?"disabled":""}>Next</button></nav>`:""}
@@ -783,7 +800,7 @@ const tgt=()=>S.view==="smart"?S.smart:S.sel;
 const priority=q=>{const p=S.prog[q.uid]||{};const w=p.w||0,sk=p.sk||0;return w>=2||w+sk>=3||(p.l==="w"&&p.cf==="s")?3:w===1?2:1;};
 const PRI={3:"High priority",2:"Mid priority",1:"Low priority"};
 function smartPool(sub,o){
-  return openMistakes().filter(q=>(!sub||q.subject===sub)&&(!o||!o.subjects||!o.subjects.size||o.subjects.has(q.subject))&&(!o||!o.topics||!o.topics.size||o.topics.has(topicKey(q.subject,q.topic)))&&monthOk(o,q)&&!((S.prog[q.uid].cd||[]).includes(dayKey()))).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
+  return openMistakes().filter(q=>(!sub||q.subject===sub)&&(!o||!o.subjects||!o.subjects.size||o.subjects.has(q.subject))&&(!o||!o.topics||!o.topics.size||o.topics.has(topicKey(q.subject,q.topic)))&&monthOk(o,q)&&sourceExamOk(o,q)&&!((S.prog[q.uid].cd||[]).includes(dayKey()))).sort((a,b)=>priority(b)-priority(a)||(S.prog[a.uid].t-S.prog[b.uid].t));
 }
 function pool(){
   const s=S.sel,lp=latestPack();
@@ -792,6 +809,7 @@ function pool(){
     if(s.topics.size&&!s.topics.has(topicKey(q.subject,q.topic)))return false;
     if(s.pack!=="all"&&q.packId!==s.pack)return false;
     if(!monthOk(s,q))return false;
+    if(!sourceExamOk(s,q))return false;
     const p=S.prog[q.uid];
     if(s.which==="wrong")return !!(p&&p.m);
     if(s.which==="new")return !(p&&p.a);
@@ -807,7 +825,7 @@ function pickSet(){
 }
 function prefsBlock(o,avail){
   const eff=effCount(o);
-  return `${monthBlock(o)}<div class="field"><span class="label">Number of questions</span><div class="opts4">${[10,20,30,"custom"].map(c=>`<button class="pbtn" aria-pressed="${o.count===c}" data-act="pc" data-v="${c}">${c==="custom"?"Custom":c}</button>`).join("")}</div>
+  return `${sourceExamBlock(o,S.view==="smart"?"smart":"quiz")}${monthBlock(o)}<div class="field"><span class="label">Number of questions</span><div class="opts4">${[10,20,30,"custom"].map(c=>`<button class="pbtn" aria-pressed="${o.count===c}" data-act="pc" data-v="${c}">${c==="custom"?"Custom":c}</button>`).join("")}</div>
   ${o.count==="custom"?`<input type="number" class="num" min="1" max="200" value="${esc(o.custom)}" data-change="custom" aria-label="Custom number of questions">`:""}</div>
   <div class="field"><span class="label">Mode</span><div class="grid2" style="gap:12px">${[["practice","Practice","See the answer and solution after each question"],["exam","Exam","Review everything after you submit"]].map(([k,t,d])=>`<button class="mode" aria-pressed="${o.mode===k}" data-act="pm" data-v="${k}"><strong>${t}</strong><span class="muted">${d}</span></button>`).join("")}</div></div>
   ${avail<eff?`<div class="info">Only ${avail} question${avail===1?"":"s"} match. We'll start with ${avail}.</div>`:""}`;
@@ -822,7 +840,7 @@ function pyqYear(q){
 const pyqYearLabel=year=>year==="unknown"?"Year not set":year;
 function pyqYearQuestions(year){
   if(!isExamSpace())return [];
-  return S.qs.filter(q=>pyqYear(q)===year).sort((a,b)=>a.no-b.no||a.packId.localeCompare(b.packId));
+  return S.qs.filter(q=>pyqYear(q)===year&&sourceExamOk(S.pyqSource,q)).sort((a,b)=>a.no-b.no||a.packId.localeCompare(b.packId));
 }
 function attemptPyqYear(year){
   const qs=pyqYearQuestions(year);if(!qs.length)return;
@@ -833,8 +851,8 @@ function reviewPyqYear(year){
   S.tr={year,f:"all",i:0};S.view="tr";S.tab="practice";S.quiz=null;render();window.scrollTo(0,0);
 }
 function pyqYearsCard(){
-  const years=[...new Set(S.qs.map(pyqYear))].sort((a,b)=>a==="unknown"?1:b==="unknown"?-1:Number(b)-Number(a));
-  return `<section class="card"><div class="row sp"><h2>${spaceName()} PYQs by year</h2>${modeSeg()}</div><p class="muted">Attempt the imported questions from one year, or review its answers, solutions and your progress.</p>${years.length?`<div class="scrolllist">${years.map(year=>{const qs=pyqYearQuestions(year),s=stat(qs);return `<div class="pack"><div><strong>${esc(pyqYearLabel(year))}</strong><div class="hint">${qs.length} question${qs.length===1?"":"s"} · ${s.att} answered · ${s.ok} correct</div></div><div class="row"><button class="btn pri sm" data-act="yearattempt" data-v="${esc(year)}" aria-label="Attempt ${esc(pyqYearLabel(year))} PYQs">Attempt</button><button class="btn sm" data-act="yearreview" data-v="${esc(year)}" aria-label="Review ${esc(pyqYearLabel(year))} PYQs">Review</button></div></div>`;}).join("")}</div>`:`<p class="hint">Years appear here after you import your PYQ files.</p><div><button class="btn" data-act="tab" data-v="import">Import PYQs</button></div>`}<p class="hint">Attempt includes previously answered questions too. Years come from your imported files or test titles. If missing, set the PYQ year during import.</p></section>`;
+  const years=[...new Set(S.qs.filter(q=>sourceExamOk(S.pyqSource,q)).map(pyqYear))].sort((a,b)=>a==="unknown"?1:b==="unknown"?-1:Number(b)-Number(a));
+  return `<section class="card"><div class="row sp"><h2>${spaceName()} PYQs by year</h2>${modeSeg()}</div>${sourceExamBlock(S.pyqSource,"year")}<p class="muted">Attempt the imported questions from one year, or review its answers, solutions and your progress.</p>${years.length?`<div class="scrolllist">${years.map(year=>{const qs=pyqYearQuestions(year),s=stat(qs);return `<div class="pack"><div><strong>${esc(pyqYearLabel(year))}</strong><div class="hint">${qs.length} question${qs.length===1?"":"s"} · ${s.att} answered · ${s.ok} correct</div></div><div class="row"><button class="btn pri sm" data-act="yearattempt" data-v="${esc(year)}" aria-label="Attempt ${esc(pyqYearLabel(year))} PYQs">Attempt</button><button class="btn sm" data-act="yearreview" data-v="${esc(year)}" aria-label="Review ${esc(pyqYearLabel(year))} PYQs">Review</button></div></div>`;}).join("")}</div>`:`<p class="hint">${S.space==="csat"&&S.pyqSource?.sourceExam?"No questions match this source. Choose All sources or import more files.":"Years appear here after you import your PYQ files."}</p><div><button class="btn" data-act="tab" data-v="import">Import PYQs</button></div>`}<p class="hint">Attempt includes previously answered questions too. Years come from your imported files or test titles. If missing, set the PYQ year during import.</p></section>`;
 }
 
 function unattemptedCard(){
@@ -969,7 +987,7 @@ function viewReview(){
   const opts=reviewOptions(q,pick);
   const verdict=r.skipped?`<p class="note skip">Not answered</p>`:r.ok?`<p class="note">Correct</p>`:`<p class="note bad">Wrong</p>`;
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="rback">Back to summary</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((Q.rv+1)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.rv+1} / ${Q.uids.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${Q.marked?.[uid]?`<span class="tag review-tag">Marked for review</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  <div class="qmeta"><span class="tag">Q${Q.rv+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}${Q.marked?.[uid]?`<span class="tag review-tag">Marked for review</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${r.skipped?"":cfShow(r.cf)}${reasoningNote(r.reason)}${solution(q)}
   <div class="row">${Q.rv>0?`<button class="btn" data-act="rprev">Previous</button>`:""}${last?`<button class="btn pri" data-act="rback">Back to summary</button>`:`<button class="btn pri" data-act="rnext">Next</button>`}<span class="hint">Review mode · arrow keys move between questions</span></div></section>${reviewPalette(Q)}</div>`;
 }
@@ -1003,7 +1021,7 @@ function viewQuiz(){
     nav=`${prevB}<button class="btn" data-act="skip">${last?"Skip and finish":"Skip"}</button><button class="btn pri" data-act="check" ${cur?"":"disabled"}>Check Answer</button>`;
   }
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="exit">Exit</button><div class="bar" aria-hidden="true"><b style="width:${Math.round(answeredCount(Q)/Q.uids.length*100)}%"></b></div><span class="muted">${Q.i+1} / ${Q.uids.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span class="question-tools">${reviewMarkButton(Q,uid)}${bmBtn(q.uid)}</span></div>
+  <div class="qmeta"><span class="tag">Q${Q.i+1}</span><span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}<span class="question-tools">${reviewMarkButton(Q,uid)}${bmBtn(q.uid)}</span></div>
   ${Q.kind==="Daily revision"?`<p class="hint">Daily revision · ${esc(dailyReason(S.prog[uid])?.label||"Review in progress")}</p>`:""}
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}
   <div class="opts" role="radiogroup" aria-label="Answer options">${opts}</div>
@@ -1116,13 +1134,13 @@ function qCard(q,extra,pickArg,status){
 function nbQuestion(q){
   const p=S.prog[q.uid]||{},picked=p.x;
   const ls=questionDisplayText(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
-  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}<span class="chip2">${esc(q.topic)}</span><span class="chip2 ${picked?"bad":"skip"}">${picked?"Incorrect":"Skipped"}</span>${picked?`<span class="chip2">You picked (${esc(picked.toLowerCase())})</span>`:""}${picked&&p.cf==="s"?`<span class="chip2 bad">Confident wrong</span>`:""}<span class="chip2 gold">${PRI[priority(q)]}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q,picked)}
   ${picked?cfShow(p.cf)+whyChips(q.uid):""}${reasoningNote(p.rn)}${solution(q)}<span class="muted" style="font-size:13px">Missed ${p.w||0}x · skipped ${p.sk||0}x · right ${p.c||0}x · clears after ${CLEAR_DAYS-(p.cd||[]).length} more day${CLEAR_DAYS-(p.cd||[]).length===1?"":"s"} of confident correct answers</span>${moveBlock(q)}</div></details>`;
 }
 function bmQuestion(q){
   const ls=questionDisplayText(q.text).split("\n"),first=ls[0],rest=ls.slice(1).join("\n").trim();
-  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
+  return `<details class="nbq"><summary><div class="qmeta"><span class="tag">Q${q.no}</span><span class="mut">${esc(q.subject)}</span>${q.year?`<span class="chip2">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}<span class="chip2">${esc(q.topic)}</span><span class="rt">${bmBtn(q.uid)}<span class="caret" aria-hidden="true">▾</span></span></div><p class="qtext">${esc(first)}</p>${rest?`<p class="qtext dots">\u2026</p>`:""}</summary>
   <div class="nbbody">${rest?`<div class="qtext">${fmtQ(rest)}</div>`:""}${figs(q.qimg)}${reviewOptions(q)}
   ${solution(q)}</div></details>`;
 }
@@ -1176,7 +1194,7 @@ function viewTest(){
   const opts=reviewOptions(q,pick);
   const verdict={ok:`<p class="note">Correct</p>`,bad:`<p class="note bad">Wrong${p.cf==="s"?" \u00b7 you were sure":""}</p>`,skip:`<p class="note skip">Skipped</p>`,"new":`<p class="note skip">Not answered</p>`}[st];
   return `<div class="qlayout"><section class="card"><div class="qhead"><button class="btn sm" data-act="home">Back to Practice</button><div class="bar" aria-hidden="true"><b style="width:${Math.round((i+1)/list.length*100)}%"></b></div><span class="muted">${i+1} / ${list.length}</span></div>
-  <div class="qmeta"><span class="tag">Q${q.no}</span>${T.year?`<span class="tag plain">${esc(S.packs.find(p=>p.id===q.packId)?.title||"")}</span>`:""}<span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
+  <div class="qmeta"><span class="tag">Q${q.no}</span>${T.year?`<span class="tag plain">${esc(S.packs.find(p=>p.id===q.packId)?.title||"")}</span>`:""}<span class="tag plain">${esc(q.subject)}</span><span class="tag plain">${esc(q.topic)}</span>${q.year?`<span class="tag plain">${esc(q.year)}</span>`:""}${sourceExamBadge(q)}<span style="margin-left:auto">${bmBtn(q.uid)}</span></div>
   <div class="qtext">${fmtQ(q.text)}</div>${figs(q.qimg)}<div class="opts">${opts}</div>${verdict}${st==="ok"||st==="bad"?cfShow(p.cf):""}${st==="bad"?whyChips(q.uid):""}${reasoningNote(p.rn)}${solution(q)}${moveBlock(q)}
   <div class="row">${i>0?`<button class="btn" data-act="tprev">Previous</button>`:""}${i<list.length-1?`<button class="btn pri" data-act="tnext">Next</button>`:`<button class="btn pri" data-act="home">Back to Practice</button>`}<span class="hint">Review mode \u00b7 arrow keys move between questions</span></div></section>${pal}</div>`;
 }
@@ -1296,7 +1314,7 @@ function importPreview(){
     const withSol=r.questions.filter(q=>q.exp).length,dups=S.imp.dups||[];
     const keep=r.questions.length-dups.filter(d=>d.choice==="old").length;
     bits.push(`<div class="pv scroll"><table><thead><tr><th>Subject</th><th>Sub-topic</th><th>Questions</th></tr></thead><tbody>${[...g].map(([s,tm])=>[...tm].map(([t,qs])=>`<tr><td>${esc(s)}</td><td>${esc(t)}</td><td>${qs.length}</td></tr>`).join("")).join("")}</tbody></table></div>
-    <p class="hint">${withSol} of ${r.questions.length} have a solution.</p>
+    <p class="hint">${withSol} of ${r.questions.length} have a solution.</p>${S.space==="csat"?`<p class="hint">Sources: ${["CSE","CAPF",""].map(exam=>`${exam||"Untagged"}: ${r.questions.filter(q=>questionSourceExam(q)===exam).length}`).join(" · ")}</p>`:""}
     ${dups.length?`<div class="field"><h3>Similar questions found (${dups.length})</h3><p class="muted">Review each pair. If they are different questions, keep both.</p>${dups.map(dupCard).join("")}</div>`:""}
     ${r.exists?`<div class="info"><strong>This file has the same set id as a test you already added.</strong> Choose what to do:<div class="seg" style="margin-top:10px">${[["new","Add as a separate test"],["replace","Replace the existing test"]].map(([k,l])=>`<button aria-pressed="${(S.imp.idMode==="replace")===(k==="replace")}" data-act="idmode" data-v="${k}">${l}</button>`).join("")}</div></div>`:""}
     <div class="field"><label class="label" for="impname">Test name (shown in the import log)</label><input id="impname" class="delin" style="width:100%" type="text" maxlength="120" value="${esc(S.imp.name||"")}" placeholder="${esc(r.title)}"></div>
@@ -1318,7 +1336,7 @@ function logRow(p){
 }
 function viewImport(){
   return `<div class="field" style="gap:6px"><h1>Import</h1><p class="muted">Add question sets. Subjects and sub-topics are created from the file. Importing into <strong class="gold">${spaceName()}</strong>.</p></div>
-  <section class="card"><h2>Import questions</h2>
+  <section class="card"><h2>Import questions</h2>${S.space==="csat"?`<p class="hint">Use <code>"source_exam": "CAPF"</code> or <code>"source_exam": "CSE"</code> at file level. A question can override it with its own source_exam. Tags identify the source within CSAT; imports stay in the selected section.</p><div><button class="btn sm" data-act="downloadtpl">Download tagged JSON example</button></div>`:""}
   <div class="field"><label class="label" for="impfile">File</label><input type="file" id="impfile" accept=".json,application/json,.txt"></div>
   <div class="field"><label class="label" for="imptext">Or paste JSON</label><textarea id="imptext" spellcheck="false" placeholder='{"subject":"Geography","questions":[...]}'>${esc(S.imp.text)}</textarea></div>
   <div id="imp-out" class="field">${importPreview()}</div></section>
@@ -1326,7 +1344,7 @@ function viewImport(){
   ${spacePacks().length?`<div class="scrolllist">${spacePacks().slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(logRow).join("")}</div>`:`<p class="muted">Nothing here yet.</p>`}
   <p class="hint">${S.storage==="cloud"?"Questions and progress are saved to your account in the cloud.":S.storage==="account"?"Questions and progress are saved to your Claude account.":"Questions and progress are saved in this browser only. Open the page signed in to keep them across devices."}</p></section>
   ${backupCard()}
-  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(TEMPLATE)}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. If the official key accepts either of two options, use "answer": ["A", "C"]. You still select one option; the accepted alternatives appear after checking or submitting. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
+  <section class="card flat"><details><summary class="sm">Import file format</summary><div class="field" style="margin-top:12px"><pre class="fmt">${esc(importTemplate())}</pre><p class="hint">"explanation" is the full solution; "summary" is an optional one-line note; "sources" is an optional list. "images" (solution figures) and "question_images" are optional lists of image links or file paths; you can also put a line like ![caption](images/fig1.png) inside the explanation. Options can also be a list. If the official key accepts either of two options, use "answer": ["A", "C"]. You still select one option; the accepted alternatives appear after checking or submitting. A question can carry its own "subject". The same set "id" replaces the earlier import.</p><div class="row"><button class="btn sm" data-act="copytpl">Copy format</button></div></div></details></section>`;
 }
 
 /* ---------- render ---------- */
@@ -1642,6 +1660,15 @@ document.addEventListener("click",async e=>{
     case "subj":if(sel.subjects.has(v)){sel.subjects.delete(v);for(const k of [...sel.topics])if(k.startsWith(v+"›"))sel.topics.delete(k);}else sel.subjects.add(v);render();break;
     case "topic":sel.topics.has(v)?sel.topics.delete(v):sel.topics.add(v);render();break;
     case "which":sel.which=v;render();break;
+    case "sourceexam":{
+      if(S.space!=="csat"||!["","CSE","CAPF","untagged"].includes(v))break;
+      const scope=el.dataset.scope;
+      if(scope==="year")S.pyqSource={sourceExam:v};
+      else if(scope==="search"){activeSearch().sourceExam=v;activeSearch().page=1;}
+      else if(scope==="smart")S.smart.sourceExam=v;
+      else if(scope==="quiz")S.sel.sourceExam=v;
+      render();break;
+    }
     case "pc":tgt().count=v==="custom"?"custom":Number(v);render();break;
     case "pm":tgt().mode=v;render();break;
     case "start":startQuiz(pickSet(),{mode:sel.mode,kind:"Quiz",label:[...sel.subjects].join(", ")||"Mixed"});break;
@@ -1675,7 +1702,7 @@ document.addEventListener("click",async e=>{
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
     case "theme":{S.theme=S.theme==="light"?"dark":"light";try{localStorage.setItem("rd_theme",S.theme);}catch(err){}render();break;}
     case "space":{if(!Object.hasOwn(SPACES,v)||v===S.space)break;flushInBackground();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
-      S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
+      S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.sourceExam="";S.pyqSource={sourceExam:""};S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
       S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
     case "idmode":S.imp.idMode=v;runParse();break;
     case "newmode":S.newMode=v;render();break;
@@ -1703,7 +1730,8 @@ document.addEventListener("click",async e=>{
     case "heatall":S.heatAll=!S.heatAll;render();break;
     case "heat":{const s=el.dataset.s,t=el.dataset.t;sel.subjects=new Set([s]);sel.topics=t?new Set([topicKey(s,t)]):new Set();sel.which="prio";sel.pack="all";S.quiz=null;S.tab="practice";S.view="wiz";S.step=2;render();window.scrollTo(0,0);break;}
     case "copymd":{const md=mdFor(openMistakes());try{await navigator.clipboard.writeText(md);S.mdText="";toast("Mistakes copied as markdown");}catch(err){S.mdText=md;render();toast("Select the text and copy it");}break;}
-    case "copytpl":try{await navigator.clipboard.writeText(TEMPLATE);toast("Format copied");}catch(err){toast("Select the format text and copy it");}break;
+    case "downloadtpl":saveFile("csat-source-exam-example.json",importTemplate());break;
+    case "copytpl":try{await navigator.clipboard.writeText(importTemplate());toast("Format copied");}catch(err){toast("Select the format text and copy it");}break;
     case "dup":{const d=S.imp.dups[Number(el.dataset.i)];if(d){d.choice=v;render();}break;}
     case "impadd":await applyImport(false);break;
     case "impattempt":await applyImport(true);break;

@@ -299,3 +299,50 @@ test('CSAT uses compact question spacing and ordered subtopic cards without chan
   const run=app();
   assert.equal(run(String.raw`(()=>{S.space='csat';const raw='Read the passage\n\n\nQuestion';const items=[{...question,topic:'Percentages'},{...question,no:2,topic:'Ratio and proportion'}];const html=topicGroups({subjects:new Set(['Science']),topics:new Set()},groupBySubject(items),['Science']);return questionDisplayText(raw)==='Read the passage\nQuestion'&&html.indexOf('Percentages')<html.indexOf('Ratio and proportion')&&html.includes('topic-card')&&raw==='Read the passage\n\n\nQuestion'})()`),true);
 });
+
+test('CSAT source tags inherit from a file, allow per-question overrides, and validate unknown values',()=>{
+  const run=app();
+  assert.equal(run(`(()=>{
+    S.space='csat';const q={no:1,subject:'Numeracy',question:'A question',options:{A:'One',B:'Two'},answer:'A'};
+    for(const defaults of [{source_exam:' capf '},{exam:'CAPF'},{paper:{source_exam:'CAPF'}},{meta:{exam:'CAPF'}}]){
+      const r=parseImport(JSON.stringify({...defaults,questions:[q,{...q,no:2,source_exam:'cse'}]}));
+      if(r.errors.length||r.questions[0].source_exam!=='CAPF'||r.questions[1].source_exam!=='CSE')return false;
+    }
+    const invalid=parseImport(JSON.stringify({source_exam:'CAPF',questions:[{...q,source_exam:'UPSC'},{...q,no:2,source_exam:0},{...q,no:3,source_exam:'CSE'}]}));
+    const legacy=parseImport(JSON.stringify({questions:[q]}));S.space='static';
+    return invalid.errors.length===2&&invalid.questions.length===1&&invalid.questions[0].source_exam==='CSE'&&!legacy.questions[0].source_exam&&parseImport(JSON.stringify({exam:'Other exam',questions:[q]})).questions.length===1;
+  })()`),true);
+});
+
+test('CSAT source filters select regular, smart and year-wise questions without hiding untagged legacy data',()=>{
+  const run=app();
+  assert.equal(run(`(()=>{
+    S.space='csat';S.packs=[{id:'csat::paper',questions:[{...question,source_exam:'CSE',year:'2021'},{...question,no:2,source_exam:'CAPF',year:'2021'},{...question,no:3,year:'2021'}]}];rebuild();
+    S.prog=Object.fromEntries(S.qs.map(q=>[q.uid,{a:1,w:1,m:1,t:1,l:'w'}]));const before=JSON.stringify(S.prog);
+    if(pool().length!==3||pyqYearQuestions('2021').length!==3)return false;
+    for(const [source,no] of [['CSE',1],['CAPF',2],['untagged',3]]){
+      S.sel.sourceExam=source;S.pyqSource={sourceExam:source};
+      if(pool().length!==1||pool()[0].no!==no||smartPool('',{sourceExam:source}).length!==1||pyqYearQuestions('2021')[0].no!==no)return false;
+      attemptPyqYear('2021');if(S.quiz.uids.join()!=='csat::paper:'+no)return false;
+    }
+    S.pyqSource={sourceExam:''};S.sel.sourceExam='';
+    return pool().length===3&&JSON.stringify(S.prog)===before&&prefsBlock(S.sel,3).includes('Source exam')&&sourceExamBadge(S.qs[0]).includes('CSE');
+  })()`),true);
+});
+
+test('source metadata persists through saving, rebuilding and backup, and retagging preserves answer history',async()=>{
+  const run=app();
+  assert.equal(await run(`(async()=>{
+    S.space='csat';const id='csat::source',q={...question,source_exam:'CSE'};
+    S.packs=[{id,title:'CSAT',questions:[q]}];rebuild();S.prog={[id+':1']:{a:2,c:1,w:1,m:1,l:'w'}};
+    const before=JSON.stringify(S.prog);await addPack({id,title:'CSAT',questions:[{...q,source_exam:'CAPF'}]},false);
+    const b=parseBackup(buildBackup());
+    return disk.get(id).questions[0].source_exam==='CAPF'&&S.qs[0].source_exam==='CAPF'&&b.packs[0].questions[0].source_exam==='CAPF'&&before===JSON.stringify(S.prog)&&b.progress[id]['1'].a===2;
+  })()`),true);
+});
+
+test('the downloadable CSAT example parses and the import screen reports its recognized sources',()=>{
+  const run=app(),text=fs.readFileSync(path.join(__dirname,'../examples/csat-source-exam.json'),'utf8');
+  run("S.space='csat'");
+  assert.equal(run(`(()=>{const r=parseImport(${JSON.stringify(text)});S.imp.parsed=r;const html=importPreview();return !r.errors.length&&r.questions[0].source_exam==='CAPF'&&r.questions[1].source_exam==='CSE'&&html.includes('CSE: 1')&&html.includes('CAPF: 1')&&JSON.stringify(JSON.parse(importTemplate()))===JSON.stringify(JSON.parse(${JSON.stringify(text)}))})()`),true);
+});

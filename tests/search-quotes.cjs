@@ -105,3 +105,14 @@ test('CSE and CSAT keep independent search queries, filters and page positions',
     S.space='cse';return activeSearch().query==='federalism'&&activeSearch().page===2&&!activeSearch().related&&!searchPlan('reasoning').aliases.includes('syllogism');
   })()`),true);
 });
+
+test('CSAT search respects source tags while CSE search stays independent',()=>{
+  const run=fixture();
+  assert.equal(run(`(()=>{
+    const base={no:1,subject:'Numeracy',topic:'Percentages',text:'Find the percentage.',options:{A:'One'},answer:'A'};
+    S.packs.push({id:'csat::tagged',questions:[{...base,source_exam:'CAPF'},{...base,no:2,source_exam:'CSE'},{...base,no:3}]});S.space='csat';rebuild();
+    if(searchQuestions('percentage').length!==3)return false;
+    for(const [source,no] of [['CAPF',1],['CSE',2],['untagged',3]]){activeSearch().sourceExam=source;const rows=searchQuestions('percentage');if(rows.length!==1||rows[0].q.no!==no)return false;}
+    S.space='cse';rebuild();return searchQuestions('federalism').length===3;
+  })()`),true);
+});

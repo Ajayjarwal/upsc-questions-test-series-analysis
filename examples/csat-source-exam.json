@@ -1,0 +1,40 @@
+{
+  "schema": "recall-desk/1",
+  "paper": {
+    "id": "csat-source-format-example",
+    "title": "CSAT format example — replace with your PYQs",
+    "year": 2021
+  },
+  "source_exam": "CAPF",
+  "subject": "Quantitative Aptitude",
+  "questions": [
+    {
+      "no": 1,
+      "topic": "Percentages",
+      "question": "What is 20% of 200?",
+      "options": {
+        "A": "20",
+        "B": "30",
+        "C": "40",
+        "D": "50"
+      },
+      "answer": "C",
+      "explanation": "20/100 × 200 = 40."
+    },
+    {
+      "no": 2,
+      "source_exam": "CSE",
+      "year": 2020,
+      "topic": "Ratio and proportion",
+      "question": "Two numbers are in the ratio 2:3 and their sum is 50. What is the smaller number?",
+      "options": {
+        "A": "10",
+        "B": "20",
+        "C": "25",
+        "D": "30"
+      },
+      "answer": "B",
+      "explanation": "The smaller number is 2/(2+3) × 50 = 20."
+    }
+  ]
+}
