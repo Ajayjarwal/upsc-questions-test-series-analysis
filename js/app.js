@@ -344,7 +344,7 @@ function parseImport(text){
     src=src.map(x=>String(x).trim()).filter(Boolean);
     let expl=String(r.explanation||r.exp||"").trim();
     if(src.length)expl=expl.split("\n").filter(l=>!/^\s*\*\*\s*News\s*:/i.test(l)).join("\n").trim();
-    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||meta.year||mm.year||""),...(sourceExam?{source_exam:sourceExam}:{})});
+    out.push({no,simg:normImgs(r.images||r.solution_images),qimg:normImgs(r.question_images||r.qimages),subject,topic:String(r.topic||"General").trim()||"General",text,options:opts,answer:ans,exp:expl,sum:String(r.summary||"").trim(),src,year:String(r.year||paper.year||meta.year||mm.year||""),...(sourceExam?{source_exam:sourceExam}:{}),...(r.question_type||meta.question_type?{question_type:String(r.question_type||meta.question_type).toLowerCase()}:{})});
   });
   out.sort((a,b)=>a.no-b.no);
   return {id,title,questions:out,errors,month:fileMonth};
@@ -735,8 +735,8 @@ function storageStatus(){
 }
 function header(){
   const open=openMistakes().length;
-  const tabs=[["practice","Practice","quiz"],["notebook","Notebook","notebook"],["heat","Heat map","heat"],["marks","Bookmarks","mark"],["import","Import","book"]];
-  return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${themeBtn()}</div></div>
+  const tabs=[["practice","Practice","quiz"],["notebook","Notebook","notebook"],["marks","Bookmarks","mark"],["import","Import","book"]];
+  return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${DASH.open?"Dashboard":esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${themeBtn()}</div></div>
   <nav class="tabs ui-tabs" role="tablist" aria-label="Study tools">${tabs.map(([key,label,icon])=>`<button class="tab" role="tab" aria-selected="${S.tab===key}" data-act="tab" data-v="${key}">${icon?ic(icon):""}${label}${key==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav></header>`;
 }
 
@@ -753,8 +753,8 @@ function uiMenuExpanded(open){
 function drawUiMenu(){
   const dialog=document.getElementById("ui-navigation-menu");
   const dark=S.theme!=="light";
-  dialog.innerHTML='<div class="ui-menu-head"><h2 id="ui-menu-title">Menu</h2><div class="ui-menu-controls"><button id="ui-menu-theme" class="ui-menu-theme" data-act="theme" data-ui-menu="theme" role="switch" aria-checked="'+dark+'" aria-label="Dark theme">'+(dark?MOON:SUN)+'<span class="ui-menu-switch" aria-hidden="true"><span></span></span></button><button class="ui-menu-close" data-ui-menu="close" aria-label="Close navigation menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 14 14M19 5 5 19"/></svg></button></div></div><p class="ui-menu-caption">Choose your practice space</p><nav class="ui-menu-list" aria-label="Practice sections">'+Object.entries(SPACES).map(([key,space])=>{
-    const info=UI_MENU_DETAILS[key],active=S.space===key;
+  dialog.innerHTML='<div class="ui-menu-head"><h2 id="ui-menu-title">Menu</h2><div class="ui-menu-controls"><button id="ui-menu-theme" class="ui-menu-theme" data-act="theme" data-ui-menu="theme" role="switch" aria-checked="'+dark+'" aria-label="Dark theme">'+(dark?MOON:SUN)+'<span class="ui-menu-switch" aria-hidden="true"><span></span></span></button><button class="ui-menu-close" data-ui-menu="close" aria-label="Close navigation menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 14 14M19 5 5 19"/></svg></button></div></div><p class="ui-menu-caption">Choose your practice space</p><nav class="ui-menu-list" aria-label="Practice sections">'+dashMenuItem()+Object.entries(SPACES).map(([key,space])=>{
+    const info=UI_MENU_DETAILS[key],active=!DASH.open&&S.space===key;
     return '<button class="ui-menu-item" data-act="space" data-v="'+key+'" data-ui-menu="select"'+(active?' aria-current="page"':'')+'><span class="ui-menu-icon">'+ic(info.icon)+'</span><span class="ui-menu-copy"><strong>'+esc(space.label)+'</strong><small>'+esc(info.description)+'</small></span>'+(active?'<span class="ui-menu-current">Current</span>':'<svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>')+'</button>';
   }).join("")+'</nav><div class="ui-menu-footer">'+storageStatus()+'</div>';
 }
@@ -888,7 +888,7 @@ function viewHome(){
   <section class="ui-stats" aria-label="Your practice at a glance"><div class="ui-stat"><span class="ui-stat-label">Questions</span><strong class="ui-stat-value">${S.qs.length}</strong><span class="ui-stat-note">${subjects} subject${subjects===1?"":"s"}</span></div><div class="ui-stat"><span class="ui-stat-label">Accuracy</span><strong class="ui-stat-value">${accuracy===null?"—":accuracy+"%"}</strong><span class="ui-stat-note">Latest answers · ${stats.att}</span></div><div class="ui-stat"><span class="ui-stat-label">To revisit</span><strong class="ui-stat-value">${mis}</strong><span class="ui-stat-note">Mistakes notebook</span></div><div class="ui-stat"><span class="ui-stat-label">Today</span><strong class="ui-stat-value">${plan.done}<small> / ${plan.target}</small></strong><span class="ui-stat-note">${plan.items.length?`${plan.items.length} due`:"You're up to date"}</span></div></section>
   ${has?dailyCard():emptyBank()}
   <section aria-labelledby="ui-session-title"><div class="ui-section-title"><h2 id="ui-session-title">Choose your next session</h2><span>Your pace. Your progress.</span></div><div class="ui-quiz-grid"><article class="ui-quiz-card ui-quiz-primary"><div class="ui-quiz-head"><span class="icon">${ic("quiz")}</span><h3>Take a quiz</h3></div><p>Choose your subjects and subtopics. Build a focused session around what you want to learn.</p><div class="ui-quiz-foot"><span class="hint">${S.qs.length} questions to explore</span><button class="btn" data-act="startwiz" ${has?"":"disabled"}>Start quiz ${UI_ARROW}</button></div></article><article class="ui-quiz-card${ready?"":" locked"}"><div class="ui-quiz-head"><span class="icon">${ic("smart")}</span><h3>Smart Quiz</h3></div><p>Turn mistakes into progress with a mix of questions that need another look, highest priority first.</p><div class="ui-quiz-foot"><span class="hint">${ready?`${ready} mistakes ready to revisit`:mis?"All mistakes practised today":"Unlocks after your first mistake"}</span><button class="btn" data-act="smart" ${ready?"":"disabled"}>Revisit mistakes ${UI_ARROW}</button></div></article></div></section>
-  <div class="ui-learning-grid">${uiNotebook()}<section class="ui-tools"><h2>Your study tools</h2><button class="ui-tool" data-act="tab" data-v="marks"><span class="icon">${ic("mark")}</span><span class="ui-tool-text"><strong>Bookmarks</strong><small>${saved} saved question${saved===1?"":"s"} for later</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="heat"><span class="icon">${ic("heat")}</span><span class="ui-tool-text"><strong>Memory heatmap</strong><small>Know where to focus next</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="import"><span class="icon">${ic("book")}</span><span class="ui-tool-text"><strong>Add to your question bank</strong><small>Import your practice files</small></span>${UI_ARROW}</button></section></div>
+  <div class="ui-learning-grid">${uiNotebook()}<section class="ui-tools"><h2>Your study tools</h2><button class="ui-tool" data-act="tab" data-v="marks"><span class="icon">${ic("mark")}</span><span class="ui-tool-text"><strong>Bookmarks</strong><small>${saved} saved question${saved===1?"":"s"} for later</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="heat"><span class="icon">${ic("heat")}</span><span class="ui-tool-text"><strong>SWOT &amp; heatmap</strong><small>See your strengths and revision priorities</small></span>${UI_ARROW}</button><button class="ui-tool" data-act="tab" data-v="import"><span class="icon">${ic("book")}</span><span class="ui-tool-text"><strong>Add to your question bank</strong><small>Import your practice files</small></span>${UI_ARROW}</button></section></div>
   ${isExamSpace()?"":`<div class="unattempted-wrap">${unattemptedCard()}</div>`}
   ${has?`<div class="ui-performance">${performanceCard()}</div>`:""}
   <div class="ui-library">${isExamSpace()?pyqYearsCard():testsCard()}</div>
@@ -1524,6 +1524,7 @@ function recordSkip(uid){
   p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];markDailyReview(uid);queueSave(q.packId);return attemptType;
 }
 function startQuiz(uids,o){
+  DASH.open=false;
   S.confirmFin=false;S.confirmExit=false;
   if(!uids.length)return;
   o=o||{};
@@ -1643,7 +1644,7 @@ document.addEventListener("click",async e=>{
   try{
   switch(a){
     case "retrybank":if(S.bankRetry)await openBank(S.bankRetry.store,S.bankRetry.mode);break;
-    case "tab":S.tab=v;if(v!=="practice")S.view="home";if(v==="notebook"&&el.dataset.quizdone)S.nb.subject=undefined;if(v!=="practice"&&S.quiz&&S.quiz.done&&el.dataset.quizdone)S.quiz=null;S.mdText="";render();window.scrollTo(0,0);break;
+    case "tab":if(v==="heat"){openSwot(S.space,true);break;}DASH.open=false;S.tab=v;if(v!=="practice")S.view="home";if(v==="notebook"&&el.dataset.quizdone)S.nb.subject=undefined;if(v!=="practice"&&S.quiz&&S.quiz.done&&el.dataset.quizdone)S.quiz=null;S.mdText="";render();window.scrollTo(0,0);break;
     case "startwiz":S.view="wiz";S.step=1;S.quiz=null;render();window.scrollTo(0,0);break;
     case "cancel":S.view="home";sel.subjects=new Set();sel.topics=new Set();sel.months=new Set();render();break;
     case "next2":if(S.view==="smart"){S.smart.step=2;render();window.scrollTo(0,0);}else if(sel.subjects.size){S.step=2;render();window.scrollTo(0,0);}break;
@@ -1701,7 +1702,7 @@ document.addEventListener("click",async e=>{
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
     case "theme":{S.theme=S.theme==="light"?"dark":"light";try{localStorage.setItem("rd_theme",S.theme);}catch(err){}render();break;}
-    case "space":{if(!Object.hasOwn(SPACES,v)||v===S.space)break;flushInBackground();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
+    case "space":{if(!Object.hasOwn(SPACES,v))break;DASH.open=false;flushInBackground();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
       S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.sourceExam="";S.pyqSource={sourceExam:""};S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
       S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
     case "idmode":S.imp.idMode=v;runParse();break;
@@ -1735,7 +1736,7 @@ document.addEventListener("click",async e=>{
     case "dup":{const d=S.imp.dups[Number(el.dataset.i)];if(d){d.choice=v;render();}break;}
     case "impadd":await applyImport(false);break;
     case "impattempt":await applyImport(true);break;
-    case "home":flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "home":DASH.open=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "review":S.quiz.rv=0;render();window.scrollTo(0,0);break;
     case "rgoto":S.quiz.rv=Number(v);render();window.scrollTo(0,0);break;
     case "rprev":if(S.quiz.rv>0){S.quiz.rv--;render();window.scrollTo(0,0);}break;
@@ -1771,7 +1772,9 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("keydown",e=>{
   if(document.getElementById("ui-navigation-menu")?.open)return;
-  if(document.getElementById("quote-dialog")?.open)return;
+  if(document.getElementById("quote-dialog")?.open||document.getElementById("swot-topic-dialog")?.open)return;
+  if(e.target?.dataset?.dashAct==="radar-score"){if(e.key==="Enter"||e.key===" ")e.preventDefault();return;}
+  if(DASH.open&&S.ready&&["none","ok"].includes(S.auth))return;
   if((e.key==="Enter"||e.key===" ")&&["markreview","reviewmarked"].includes(e.target?.dataset?.act))return;
   if(S.auth==="login"&&e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){authGo();e.preventDefault();return;}
   const Q=S.quiz;
@@ -1830,6 +1833,183 @@ document.addEventListener("click",event=>{
     document.getElementById("ui-menu-theme").focus();
   }
 });
+
+/* ---------- Learning dashboard ---------- */
+const DASH={open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
+const DASH_BANDS={strength:{label:"Strengths",rule:"Above 70%",hint:"Keep these warm with light revision",colour:"#61d9a0"},opportunity:{label:"Opportunities",rule:"60–70%",hint:"A little practice can make these strengths",colour:"#86aaff"},weakness:{label:"Weaknesses",rule:"30–59%",hint:"Revisit concepts, then practise",colour:"#efc65d"},threat:{label:"Threats",rule:"Below 30%",hint:"Give these topics focused attention",colour:"#ff7d86"}};
+const DASH_MIN=5;
+const dashModeName=()=>({first:"First attempt",latest:"Latest answer",repeat:"Repeat practice"}[DASH.mode]);
+const dashPc=(ok,n)=>n?Math.round(ok/n*100):null;
+const dashPercent=value=>value===null?"—":value+"%";
+const dashShort=name=>({"Indian Polity and Governance":"Polity","Modern Indian History":"History","Environment and Ecology":"Environment","Quantitative Aptitude":"Numeracy","Logical Reasoning":"Reasoning","Reading Comprehension":"Comprehension"}[name]||name);
+function dashMenuItem(){return `<button class="ui-menu-item swot-menu-item" data-dash-act="open" data-ui-menu="select"${DASH.open?' aria-current="page"':""}><span class="ui-menu-icon">${ic("heat")}</span><span class="ui-menu-copy"><strong>Dashboard</strong><small>Your SWOT, subject profile &amp; heatmap</small></span>${DASH.open?'<span class="ui-menu-current">Current</span>':UI_ARROW}</button>`;}
+function dashQuestions(scope=DASH.scope,source=DASH.source){
+  const out=[];
+  for(const p of S.packs){
+    const space=packSpace(p.id);if(scope!=="mixed"&&space!==scope)continue;
+    for(const q of p.questions){
+      if(scope==="csat"&&source&&(source==="untagged"?!!questionSourceExam(q):questionSourceExam(q)!==source))continue;
+      out.push({...q,uid:p.id+":"+q.no,packId:p.id,space,src:q.src||[],qimg:q.qimg||[],simg:q.simg||[],exp:q.exp||"",sum:q.sum||"",year:q.year||"",source_exam:questionSourceExam(q)});
+    }
+  }
+  return out;
+}
+function dashOutcome(q,mode=DASH.mode){
+  const p=S.prog[q.uid]||{};
+  if(mode==="first")return p.first?{n:p.first.skipped?0:1,ok:!p.first.skipped&&p.first.ok?1:0,sk:p.first.skipped?1:0}:{n:0,ok:0,sk:0};
+  if(mode==="repeat")return {n:p.repeat?.a||0,ok:p.repeat?.c||0,sk:p.repeat?.sk||0};
+  return {n:p.a>0&&["c","w"].includes(p.l)?1:0,ok:p.a>0&&p.l==="c"?1:0,sk:!p.a&&p.sk?1:0};
+}
+function dashStats(qs,mode=DASH.mode){
+  const a={bank:qs.length,n:0,ok:0,sk:0,observed:0,answered:0,unknown:0,mistakes:0,due:0,done:0,sure:0,sureOk:0,confWrong:0,repeated:0,uncertain:0,nearClear:0,time:0,timed:0,last:0,reasons:{}};
+  const today=dayKey();
+  for(const q of qs){
+    const p=S.prog[q.uid]||{},o=dashOutcome(q,mode);a.n+=o.n;a.ok+=o.ok;a.sk+=o.sk;if(o.n)a.observed++;
+    if(p.a>0)a.answered++;if(!p.first&&(p.a||p.sk))a.unknown++;
+    if(p.m)a.mistakes++;if(p.dr===today)a.done++;
+    const due=dueDay(p);if(due&&due<=today&&p.dr!==today&&(!p.t||dayKey(p.t)!==today))a.due++;
+    if(p.a&&p.cf==="s"){a.sure++;if(p.l==="c")a.sureOk++;else if(p.l==="w")a.confWrong++;}
+    if(p.m&&p.w>=2)a.repeated++;if(p.l==="c"&&["g","h"].includes(p.cf))a.uncertain++;
+    if(p.m&&(p.cd||[]).length===CLEAR_DAYS-1)a.nearClear++;
+    if(p.tn>0){a.time+=p.ts||0;a.timed+=p.tn;}a.last=Math.max(a.last,p.t||0);
+    if(p.wy&&p.w>0)a.reasons[p.wy]=(a.reasons[p.wy]||0)+1;
+  }
+  a.pct=dashPc(a.ok,a.n);a.coverage=dashPc(a.answered,a.bank);a.surePct=dashPc(a.sureOk,a.sure);a.avgTime=a.timed?Math.round(a.time/a.timed):null;
+  a.band=a.n===0?(mode==="first"&&a.unknown?"unrecorded":"new"):a.observed<DASH_MIN?"limited":a.pct>70?"strength":a.pct>=60?"opportunity":a.pct>=30?"weakness":"threat";
+  return a;
+}
+function dashRows(qs=dashQuestions(),mode=DASH.mode,by=DASH.heatBy){
+  const groups=new Map();
+  for(const q of qs){const topic=by==="subject"?"":q.topic,key=JSON.stringify([q.space,q.subject,topic]);if(!groups.has(key))groups.set(key,{id:key,space:q.space,subject:q.subject,topic,label:topic||q.subject,qs:[]});groups.get(key).qs.push(q);}
+  return [...groups.values()].map(row=>({...row,stats:dashStats(row.qs,mode)}));
+}
+function dashSubjectRows(qs){
+  const groups=new Map();for(const q of qs){if(!groups.has(q.subject))groups.set(q.subject,[]);groups.get(q.subject).push(q);}
+  return [...groups].map(([name,items])=>({name,stats:dashStats(items)})).sort((a,b)=>b.stats.n-a.stats.n||a.name.localeCompare(b.name));
+}
+function dashEvidence(a){return a.n?`${a.ok}/${a.n} correct · ${a.observed} distinct questions`:a.band==="unrecorded"?"First-attempt history unavailable":a.answered?"No answers in this practice mode":"Not answered yet";}
+function dashPill(a){return a.band==="limited"?'<span class="swot-evidence">Limited data</span>':a.band==="unrecorded"?'<span class="swot-evidence">History unavailable</span>':a.band==="new"?'<span class="swot-evidence">No result yet</span>':"";}
+function dashFilteredRows(rows){const query=DASH.query.trim().toLowerCase();return rows.filter(r=>(DASH.band==="all"||r.stats.band===DASH.band)&&(!query||(r.label+" "+r.subject+" "+SPACES[r.space].label).toLowerCase().includes(query)));}
+function dashRadarPoint(subject,x,y){
+  const a=subject.stats,label=`${subject.name}: ${dashPercent(a.pct)} ${dashModeName().toLowerCase()} accuracy. ${dashEvidence(a)}${a.observed<DASH_MIN?'. Limited data':''}`;
+  return `<g class="swot-radar-target" tabindex="0" role="button" aria-label="${esc(label)}" data-dash-act="radar-score"><circle cx="${x}" cy="${y}" r="14" class="swot-radar-hit"/><circle cx="${x}" cy="${y}" r="4.5" class="swot-radar-point"/><g class="swot-radar-tooltip" aria-hidden="true"><rect x="18" y="4" width="424" height="79" rx="10"/><text x="32" y="27" class="swot-tooltip-title">${esc(dashShort(subject.name))} · ${dashPercent(a.pct)}</text><text x="32" y="48">${dashModeName()} · ${a.ok}/${a.n} correct</text><text x="32" y="68">${a.observed} distinct questions${a.observed<DASH_MIN?' · Limited data':''}</text></g></g>`;
+}
+function dashRadar(subjects){
+  const axes=subjects.filter(s=>s.stats.n>0).slice(0,8),cx=230,cy=186,r=118;
+  if(axes.length<3)return `<div class="swot-radar-empty">${ic("heat")}<p>Answer questions in three subjects to build your profile.</p><span class="hint">Available subject values are listed below.</span></div>`;
+  const xy=(i,v,extra=0)=>{const t=-Math.PI/2+i*Math.PI*2/axes.length;return [cx+(r*v/100+extra)*Math.cos(t),cy+(r*v/100+extra)*Math.sin(t)];};
+  const points=v=>axes.map((s,i)=>xy(i,typeof v==="number"?v:s.stats.pct).map(x=>x.toFixed(1)).join(",")).join(" ");
+  const labels=axes.map((s,i)=>{const [x,y]=xy(i,100,29),name=dashShort(s.name),words=name.split(" "),lines=name.length>18?[words.slice(0,Math.ceil(words.length/2)).join(" "),words.slice(Math.ceil(words.length/2)).join(" ")]:[name];return `<text x="${x}" y="${y}" text-anchor="${Math.abs(x-cx)<20?"middle":x>cx?"start":"end"}">${lines.map((line,j)=>`<tspan x="${x}" dy="${j?18:0}">${esc(line)}</tspan>`).join("")}</text>`;}).join("");
+  return `<svg class="swot-radar" viewBox="0 0 460 375" role="group" aria-labelledby="swot-radar-title swot-radar-desc"><title id="swot-radar-title">Your subject accuracy</title><desc id="swot-radar-desc">One series showing your ${dashModeName().toLowerCase()} accuracy. ${axes.map(s=>s.name+": "+s.stats.pct+" percent, "+s.stats.observed+" distinct questions").join(". ")}. Full values are listed below.</desc>${[20,40,60,80,100].map(v=>`<polygon class="swot-radar-grid" points="${points(v)}"/>`).join("")}${axes.map((s,i)=>{const [x,y]=xy(i,100);return `<path class="swot-radar-grid" d="M${cx},${cy} L${x},${y}"/>`;}).join("")}${[20,40,60,80,100].map(v=>`<text class="swot-radar-tick" x="${cx+7}" y="${cy-r*v/100-3}">${v}</text>`).join("")}<polygon class="swot-radar-you" points="${points(null)}"/>${labels}${axes.map((s,i)=>{const [x,y]=xy(i,s.stats.pct);return dashRadarPoint(s,x,y);}).join("")}</svg><div class="swot-chart-legend"><i></i> You <span>· ${dashModeName()}</span></div>${subjects.filter(s=>s.stats.n>0).length>8?'<p class="hint">Eight most-practised subjects shown. All subjects are listed below.</p>':""}`;
+}
+function dashTile(row){const a=row.stats;return `<button class="swot-heat-tile ${a.band}${DASH.detail===row.id?" selected":""}" data-dash-act="detail" data-key="${esc(row.id)}" aria-label="${esc(SPACES[row.space].label+", "+row.subject+", "+row.label+", "+dashPercent(a.pct)+", "+dashEvidence(a))}">${DASH.scope==="mixed"?`<span class="swot-tile-space">${SPACES[row.space].label}</span>`:""}<span class="swot-tile-label">${esc(row.label)}</span><strong>${dashPercent(a.pct)}</strong><span class="swot-tile-count">${esc(dashEvidence(a))}</span>${dashPill(a)}${a.confWrong?`<span class="swot-tile-alert">${a.confWrong} sure but wrong</span>`:""}</button>`;}
+function dashHeatGroup(subject,items,index){
+  const key=JSON.stringify([DASH.scope,DASH.source,DASH.heatBy,subject]),limit=DASH.heatLimits[key]||12;
+  const open=DASH.query||DASH.band!=="all"||(DASH.heatOpen[key]??(DASH.scope!=="mixed"||index===0));
+  return `<details class="swot-heat-group" data-dash-group="${esc(key)}" ${open?"open":""}><summary><span><strong>${esc(subject)}</strong><small>${items.length} ${DASH.heatBy==="topic"?"topic":"section"}${items.length===1?"":"s"}</small></span><b>${dashPercent(dashStats(items.flatMap(r=>r.qs)).pct)}</b></summary><div class="swot-heat-tiles">${items.slice(0,limit).map(dashTile).join("")}</div>${items.length>limit?`<div class="swot-heat-more"><span>Showing ${limit} of ${items.length}</span><button class="btn sm" data-dash-act="more-topics" data-key="${esc(key)}">Show next ${Math.min(12,items.length-limit)} topics</button></div>`:""}</details>`;
+}
+function dashHeatmap(rows){
+  const filtered=dashFilteredRows(rows),groups=new Map();for(const row of filtered){if(!groups.has(row.subject))groups.set(row.subject,[]);groups.get(row.subject).push(row);}
+  return `<section class="swot-panel swot-heatmap" id="swot-heatmap" aria-labelledby="swot-heatmap-title"><div class="swot-panel-heading"><div><h2 id="swot-heatmap-title">Your learning heatmap</h2><p>Choose a tile to understand it and plan your next session.</p></div><div class="seg swot-small-seg">${["topic","subject"].map(by=>`<button data-dash-act="heatby" data-value="${by}" aria-pressed="${DASH.heatBy===by}">By ${by}</button>`).join("")}</div></div><form class="swot-search" id="swot-search-form"><label class="sr-only" for="swot-topic-search">Find a subject or topic</label><input id="swot-topic-search" class="txt" type="search" value="${esc(DASH.query)}" placeholder="Find a subject or topic…"><button class="btn sm" type="submit">Find</button></form><div class="swot-heat-legend">${Object.entries(DASH_BANDS).map(([k,b])=>`<span><i class="${k}"></i>${b.label}</span>`).join("")}<span><i class="new"></i>No result / limited data</span></div>${DASH.band!=="all"?`<div class="swot-filter-note">Showing ${esc(DASH_BANDS[DASH.band]?.label||DASH.band)} <button class="linkbtn" data-dash-act="band" data-value="all">Show all</button></div>`:""}<div class="swot-heat-groups">${[...groups].map(([subject,items],i)=>dashHeatGroup(subject,items,i)).join("")||'<div class="swot-empty"><p>No topics match these filters.</p><button class="btn sm" data-dash-act="clear">Clear filters</button></div>'}</div><p class="swot-panel-foot">Bands require at least ${DASH_MIN} distinct answered questions. Smaller samples stay provisional; unanswered topics have no percentage.</p></section>`;
+}
+function dashTopicDetail(rows){
+  const row=rows.find(r=>r.id===DASH.detail)||dashRows(dashQuestions(),DASH.mode,"topic").find(r=>r.id===DASH.detail);if(!row)return "";const a=row.stats;
+  return `<section class="swot-panel swot-focus" aria-labelledby="swot-focus-title"><div class="swot-panel-heading"><div><span class="ui-overline">Topic focus · ${SPACES[row.space].label}</span><h2 id="swot-focus-title">${esc(row.label)}</h2><p>${esc(row.subject)} · ${esc(dashEvidence(a))}</p></div><button class="btn sm" data-dash-act="close-detail">Close</button></div><div class="swot-focus-stats"><span><strong>${dashPercent(a.pct)}</strong>${dashModeName()} accuracy</span><span><strong>${a.mistakes}</strong>Open mistakes</span><span><strong>${a.due}</strong>Due for review</span><span><strong>${a.confWrong}</strong>Sure but wrong</span></div><div class="row"><button class="btn pri" data-dash-act="practice" data-key="${esc(row.id)}">Practise this ${row.topic?"topic":"subject"} ${UI_ARROW}</button><button class="btn" data-dash-act="review-topic">${DASH.showQuestions?"Hide":"Review"} these questions</button>${dashPill(a)}</div>${DASH.showQuestions?`<div class="swot-review-list">${row.qs.map(q=>{const p=S.prog[q.uid]||{};return qCard(q,SPACES[q.space].label,p.x||"",p.a?(p.l==="c"?"ok":"bad"):p.sk?"skip":"");}).join("")}</div>`:""}</section>`;
+}
+function dashTopicDialog(){
+  let dialog=document.getElementById("swot-topic-dialog");
+  if(dialog)return dialog;
+  dialog=document.createElement("dialog");dialog.id="swot-topic-dialog";dialog.className="swot-topic-dialog";dialog.setAttribute("aria-labelledby","swot-focus-title");
+  dialog.addEventListener("close",()=>{
+    DASH.detail=null;DASH.showQuestions=false;document.body.classList.remove("swot-topic-open");
+    const trigger=DASH.topicTrigger;DASH.topicTrigger=null;if(trigger?.isConnected)trigger.focus({preventScroll:true});
+  });
+  dialog.addEventListener("click",event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();});
+  document.body.appendChild(dialog);return dialog;
+}
+function openDashTopic(key,trigger){
+  DASH.detail=key;DASH.showQuestions=false;DASH.topicTrigger=trigger;
+  const dialog=dashTopicDialog();dialog.innerHTML=dashTopicDetail(dashRows());
+  document.body.classList.add("swot-topic-open");if(!dialog.open)dialog.showModal();
+  dialog.scrollTop=0;
+}
+function dashNextActions(rows){
+  const picked=[],used=new Set();const add=(row,title,reason)=>{if(row&&!used.has(row.id)){picked.push({row,title,reason});used.add(row.id);}};
+  const risk=[...rows].sort((a,b)=>(b.stats.confWrong*5+b.stats.repeated*3+b.stats.due*2)-(a.stats.confWrong*5+a.stats.repeated*3+a.stats.due*2));
+  const highest=risk.find(r=>r.stats.confWrong||r.stats.repeated||r.stats.due);
+  add(highest,"Revisit a priority topic",highest?`${highest.stats.confWrong} confident errors · ${highest.stats.due} due reviews`:"");
+  const opportunity=rows.filter(r=>r.stats.band==="opportunity").sort((a,b)=>b.stats.pct-a.stats.pct).find(r=>!used.has(r.id));
+  add(opportunity,"Build on a near-strength",opportunity?`${opportunity.stats.pct}% accuracy across ${opportunity.stats.observed} questions`:"");
+  const fresh=rows.find(r=>r.stats.band==="new"&&!used.has(r.id));add(fresh,"Explore an untouched topic",fresh?`${fresh.stats.bank} questions waiting`:"");
+  for(const row of risk)if(picked.length<3&&!used.has(row.id))add(row,"Choose a focused session",row.stats.n?`${dashEvidence(row.stats)}`:`${row.stats.bank} questions in your bank`);
+  return `<section class="swot-next" aria-labelledby="swot-next-title"><div class="ui-section-title"><h2 id="swot-next-title">Your next three moves</h2><span>Small sessions. Clear priorities.</span></div><div class="swot-action-grid">${picked.map((item,i)=>`<button class="swot-action" data-dash-act="detail" data-key="${esc(item.row.id)}"><span class="swot-action-index">0${i+1}</span><span><small>${item.title}</small><strong>${esc(item.row.label)}</strong><span>${esc(item.reason)} · ${SPACES[item.row.space].label}</span></span>${UI_ARROW}</button>`).join("")||'<p class="muted">Add a question set to start building your study priorities.</p>'}</div></section>`;
+}
+function dashExtraPanels(qs,rows,a){
+  const stale=rows.filter(r=>r.stats.last&&Math.floor((Date.now()-r.stats.last)/86400000)>=30).sort((x,y)=>x.stats.last-y.stats.last).slice(0,5);
+  const types=[["factual","Factual"],["conceptual","Conceptual"],["analytical","Analytical"],["application","Application"]],tagged=qs.filter(q=>types.some(([type])=>type===q.question_type));
+  return `<div class="swot-bottom-grid"><section class="swot-panel"><h2>How you approach questions</h2><p class="swot-subtitle">Your accuracy by explicitly tagged question type.</p><div class="swot-type-rows">${types.map(([type,label])=>{const stats=dashStats(qs.filter(q=>q.question_type===type));return `<div><span>${label}<small>${stats.observed} distinct answered questions</small></span><i><b style="width:${stats.pct||0}%"></b></i><strong>${dashPercent(stats.pct)}</strong></div>`;}).join("")}</div><p class="swot-panel-foot">${qs.length-tagged.length} questions have no question_type tag. Types are not inferred from their text; source exams and current-affairs labels are kept separate.</p></section><section class="swot-panel"><h2>Not practised recently</h2><p class="swot-subtitle">Topics last touched 30+ days ago.</p><div class="swot-stale-list">${stale.map(row=>`<button data-dash-act="detail" data-key="${esc(row.id)}"><span><strong>${esc(row.label)}</strong><small>${esc(row.subject)} · ${dashPercent(row.stats.pct)} ${dashModeName().toLowerCase()}</small></span><b>${Math.floor((Date.now()-row.stats.last)/86400000)} days</b></button>`).join("")||'<p class="swot-empty-note">No previously practised topics are overdue by 30 days.</p>'}</div><p class="swot-panel-foot">${rows.filter(r=>!r.stats.last).length} topics have never been practised; they stay separate from this list.</p></section></div><section class="swot-panel swot-risk-panel"><div><h2>Signals worth a second look</h2><p>These current-state alerts can occur in any accuracy band.</p></div><div class="swot-risk-counts"><span><strong>${a.confWrong}</strong>Sure but wrong</span><span><strong>${a.repeated}</strong>Repeated mistakes still open</span><span><strong>${a.uncertain}</strong>Correct guesses / 50–50</span><span><strong>${a.nearClear}</strong>One confident revision day from clearing</span></div></section>`;
+}
+function dashMixedTable(){
+  if(DASH.scope!=="mixed")return "";
+  return `<section class="swot-panel"><div class="swot-panel-heading"><div><h2>Your section balance</h2><p>Compare your own question banks using the same accuracy basis.</p></div></div><div class="swot-comparison-wrap"><table class="swot-comparison"><thead><tr><th>Section</th><th>${dashModeName()} accuracy</th><th>Bank coverage</th><th>Open mistakes</th><th>Reviews due</th></tr></thead><tbody>${Object.entries(SPACES).map(([key,space])=>{const a=dashStats(dashQuestions(key,""));return `<tr><th><button class="linkbtn" data-dash-act="scope" data-value="${key}">${space.label}</button></th><td><strong>${dashPercent(a.pct)}</strong><small>${a.ok}/${a.n} correct</small></td><td>${dashPercent(a.coverage)}<small>${a.answered}/${a.bank} answered</small></td><td>${a.mistakes}</td><td>${a.due}</td></tr>`;}).join("")}</tbody></table></div><p class="swot-panel-foot">Mixed counts each question within its own bank. Imports repeated across sections remain separate; raw exam marks are not combined.</p></section>`;
+}
+function dashMetrics(a,extra=false){
+  const metrics=extra?[[dashPercent(a.surePct),"Accuracy when sure",`${a.sureOk}/${a.sure} latest sure answers correct`],[a.avgTime===null?"—":a.avgTime+'<small>s</small>',"Recorded answer time",`${a.timed} timed attempts · all recorded practice`]]:[[dashPercent(a.pct),dashModeName()+" accuracy",`${a.ok}/${a.n} answered correctly`],[dashPercent(a.coverage),"Question-bank coverage",`${a.answered}/${a.bank} questions answered`],[a.mistakes,"Open mistakes","Wrong and skipped questions"],[a.due,"Reviews due",`${a.done} practised in revision today`]];
+  return `<section class="swot-metrics${extra?' swot-metrics-extra':''}" aria-label="${extra?'Confidence and timing':'Learning statistics'}">${metrics.map(([value,label,note])=>`<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join("")}</section>`;
+}
+function dashMoreInsights(qs,rows,a){
+  return `<details class="swot-more-insights"${DASH.insightsOpen?' open':''}><summary><span><strong>More insights</strong><small>Timing, confidence and detailed breakdowns</small></span><span class="swot-insights-toggle" aria-hidden="true"></span></summary><div class="swot-insights-content">${dashMetrics(a,true)}${dashExtraPanels(qs,rows,a)}${dashMixedTable()}</div></details>`;
+}
+function viewSwot(){
+  const qs=dashQuestions(),a=dashStats(qs),rows=dashRows(qs),subjects=dashSubjectRows(qs),topicRows=dashRows(qs,DASH.mode,"topic");
+  const scopeLabel=DASH.scope==="mixed"?"All five sections":SPACES[DASH.scope].label;
+  return `<main class="swot-dash"><section class="swot-hero"><div><div class="ui-overline">Your learning, in focus <span class="ui-context-label">Your question bank</span></div><h1>SWOT analysis</h1><p>Know what’s working. See what deserves your next hour.</p></div><span class="swot-date">${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</span></section><nav class="swot-scope-tabs" aria-label="Dashboard sections">${[["mixed","Mixed"],...Object.entries(SPACES).map(([key,s])=>[key,s.label])].map(([key,label])=>`<button data-dash-act="scope" data-value="${key}" aria-pressed="${DASH.scope===key}">${label}</button>`).join("")}</nav><section class="swot-controls" aria-label="Analysis controls"><div><span class="label">Accuracy basis</span><div class="seg">${[["first","First attempt"],["latest","Latest answer"],["repeat","Repeat practice"]].map(([key,label])=>`<button data-dash-act="mode" data-value="${key}" aria-pressed="${DASH.mode===key}">${label}</button>`).join("")}</div></div>${DASH.scope==="csat"?`<div><span class="label">CSAT source</span><div class="seg">${[["","All sources"],["CSE","CSE"],["CAPF","CAPF"],["untagged","Untagged"]].map(([key,label])=>`<button data-dash-act="source" data-value="${key}" aria-pressed="${DASH.source===key}">${label}</button>`).join("")}</div></div>`:`<p>${scopeLabel} · ${a.bank} imported questions<br><span>Choose the same basis for your SWOT, subject chart, and heatmap.</span></p>`}</section>${DASH.mode==="first"&&a.unknown?`<div class="swot-history-note">${a.unknown} earlier questions have no recorded first attempt. <button class="linkbtn" data-dash-act="mode" data-value="latest">View their latest answers</button></div>`:""}${dashMetrics(a)}<section aria-labelledby="swot-summary-title"><div class="ui-section-title"><h2 id="swot-summary-title">Your SWOT at a glance</h2><span>${DASH_MIN}+ distinct answered questions per classified ${DASH.heatBy}</span></div><div class="swot-summary-grid">${Object.entries(DASH_BANDS).map(([key,b])=>`<button class="swot-summary ${key}" data-dash-act="band" data-value="${key}" aria-pressed="${DASH.band===key}"><span><b>${b.label}</b><small>${b.rule}</small></span><strong>${rows.filter(r=>r.stats.band===key).length}<small>${DASH.heatBy}s</small></strong><span class="swot-summary-hint">${b.hint} ${UI_ARROW}</span></button>`).join("")}</div><div class="swot-evidence-note"><span>${rows.filter(r=>r.stats.band==="limited").length} with limited data · ${rows.filter(r=>["new","unrecorded"].includes(r.stats.band)).length} without results for this basis</span><button class="linkbtn" data-dash-act="band" data-value="all">Show every band</button></div></section>${dashNextActions(topicRows)}<div class="swot-visual-grid"><section class="swot-panel swot-profile"><h2>Your subject profile</h2><p class="swot-subtitle">Only your performance. ${dashModeName()} accuracy.</p><div class="swot-radar-wrap">${dashRadar(subjects)}</div><details class="swot-subject-values" open><summary>Subject values &amp; evidence</summary>${subjects.map(s=>`<button data-dash-act="find-subject" data-value="${esc(s.name)}"><span>${esc(s.name)}<small>${s.stats.ok}/${s.stats.n} correct · ${s.stats.observed} distinct questions</small></span><strong>${dashPercent(s.stats.pct)}</strong></button>`).join("")}</details><p class="swot-panel-foot">Hover or tap a chart point for its score. The chart has one series: you. Values from fewer than ${DASH_MIN} distinct answered questions are provisional.</p></section>${dashHeatmap(rows)}</div>${dashMoreInsights(qs,topicRows,a)}<footer class="ui-footer"><span>Based on your recorded practice</span><span>Your saved questions and progress</span></footer></main>`;
+}
+function openSwot(scope="mixed",heat=false){
+  DASH.open=true;DASH.scope=scope;DASH.detail=null;DASH.showQuestions=false;DASH.band="all";DASH.source="";DASH.query="";render();
+  if(heat)document.getElementById("swot-heatmap")?.scrollIntoView({block:"start"});else window.scrollTo(0,0);
+}
+function dashPractise(row){
+  DASH.open=false;S.space=row.space;S.quiz=null;S.tab="practice";S.view="wiz";S.step=2;rebuild();
+  S.sel={subjects:new Set([row.subject]),topics:row.topic?new Set([topicKey(row.subject,row.topic)]):new Set(),pack:"all",which:"prio",mode:"practice",count:10,custom:10,sourceExam:row.space==="csat"?DASH.source:""};render();window.scrollTo(0,0);
+}
+const swotPracticeRender=render;
+render=function(){
+  if(!DASH.open||!S.ready||S.bankError||!["none","ok"].includes(S.auth)){
+    document.documentElement.setAttribute("data-dashboard","false");
+    const dialog=document.getElementById("swot-topic-dialog");
+    if(dialog?.open){DASH.topicTrigger=null;DASH.detail=null;DASH.showQuestions=false;dialog.close();document.body.classList.remove("swot-topic-open");}
+    return swotPracticeRender();
+  }
+  document.documentElement.setAttribute("data-dashboard","true");
+  document.documentElement.setAttribute("data-space",DASH.scope);document.documentElement.setAttribute("data-theme",S.theme);
+  const keep=window.scrollY;app.innerHTML=header().replace(/<nav class="tabs ui-tabs"[\s\S]*?<\/nav>/,'<div class="swot-header-caption"><span>Dashboard / Learning analysis</span><span>Your learning dashboard</span></div>')+viewSwot();window.scrollTo(0,keep);
+};
+document.addEventListener("submit",event=>{if(event.target.id!=="swot-search-form")return;event.preventDefault();DASH.query=document.getElementById("swot-topic-search").value;DASH.detail=null;render();document.getElementById("swot-heatmap")?.scrollIntoView({block:"start"});});
+document.addEventListener("toggle",event=>{const key=event.target.dataset?.dashGroup;if(key)DASH.heatOpen[key]=event.target.open;if(event.target.classList?.contains("swot-more-insights"))DASH.insightsOpen=event.target.open;},true);
+document.addEventListener("click",event=>{
+  const el=event.target.closest("[data-dash-act]");if(!el)return;
+  const act=el.dataset.dashAct,value=el.dataset.value;
+  if(act==="radar-score"){el.focus({preventScroll:true});return;}
+  if(act==="open"){openSwot();return;}
+  if(act==="detail"){openDashTopic(el.dataset.key,el);return;}
+  if(act==="close-detail"){document.getElementById("swot-topic-dialog")?.close();return;}
+  if(act==="review-topic"){DASH.showQuestions=!DASH.showQuestions;const dialog=dashTopicDialog(),keep=dialog.scrollTop;dialog.innerHTML=dashTopicDetail(dashRows());dialog.scrollTop=keep;dialog.querySelector('[data-dash-act="review-topic"]')?.focus({preventScroll:true});return;}
+  if(act==="practice"){const row=dashRows().find(r=>r.id===el.dataset.key)||dashRows(dashQuestions(),DASH.mode,"topic").find(r=>r.id===el.dataset.key);if(row){DASH.topicTrigger=null;document.getElementById("swot-topic-dialog")?.close();document.body.classList.remove("swot-topic-open");dashPractise(row);}return;}
+  if(act==="more-topics")DASH.heatLimits[el.dataset.key]=(DASH.heatLimits[el.dataset.key]||12)+12;
+  if(act==="scope"){DASH.scope=value;DASH.source="";DASH.band="all";DASH.query="";DASH.detail=null;DASH.showQuestions=false;}
+  if(act==="mode"){DASH.mode=value;DASH.detail=null;DASH.showQuestions=false;}
+  if(act==="source"){DASH.source=value;DASH.detail=null;}
+  if(act==="band"){DASH.band=DASH.band===value?"all":value;DASH.detail=null;}
+  if(act==="heatby"){DASH.heatBy=value;DASH.detail=null;}
+  if(act==="expand")DASH.expanded[value]=!DASH.expanded[value];
+  if(act==="clear"){DASH.band="all";DASH.query="";}
+  if(act==="find-subject"){DASH.query=value;DASH.band="all";DASH.detail=null;}
+  render();
+  if(act==="find-subject"||act==="band")document.getElementById("swot-heatmap")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth"});
+  else if(["scope","mode","source"].includes(act))window.scrollTo(0,0);
+});
+
 
 render();
 (async function boot(){

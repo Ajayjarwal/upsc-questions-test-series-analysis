@@ -245,11 +245,12 @@ test('notebook overview counts open mistakes once per question and only in the a
   assert.equal(run(`(()=>{S.space='cse';S.packs=[{id:'cse::demo',questions:[{...question,subject:'Polity'},{...question,no:2,subject:'Polity'},{...question,no:3,subject:'Geography'},{...question,no:4,subject:'Geography'}]},{id:'capf::demo',questions:[question]}];S.prog={'cse::demo:1':{m:1,w:9},'cse::demo:2':{m:1,sk:2},'cse::demo:3':{m:1,w:1},'cse::demo:4':{m:0,w:3},'capf::demo:1':{m:1,w:1}};rebuild();const rows=notebookSubjects();return rows.length===2&&rows[0].subject==='Polity'&&rows[0].count===2&&rows[1].count===1&&notebookOverview().includes('2 subjects · Polity leads with 2')})()`),true);
 });
 
-test('dashboard uses only active-space data and leaves the bank and progress unchanged', () => {
+test('practice home uses only active-space data and leaves the bank and progress unchanged', () => {
   const run=app();
   assert.equal(run(`(()=>{
     S.packs=[{id:'cse::paper',title:'CSE 2021',questions:[{...question,year:'2021'}]},{id:'capf::paper',questions:[question,{...question,no:2}]}];
     S.prog={'cse::paper:1':{a:1,c:1,m:0},'capf::paper:1':{a:1,w:1,m:1}};
+    DASH.open=false;
     const before=JSON.stringify({packs:S.packs,prog:S.prog});
     for(const space of Object.keys(SPACES)){
       S.space=space;rebuild();const html=viewHome(),head=header(),menu=menuHtml();
