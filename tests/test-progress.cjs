@@ -14,14 +14,14 @@ function fixture({rows=new Map(),storage=new Map()}={}){
     document:{visibilityState:'visible',getElementById:node,querySelector:node,documentElement:{setAttribute(){}},addEventListener(){}},window:{scrollY:0,innerHeight:800,scrollTo(){},matchMedia:()=>({matches:false})}});
   vm.runInContext(core,context);
   const run=code=>vm.runInContext(code,context);
-  run(`render=()=>{};toast=()=>{};S.ready=true;S.auth='none';S.space='static';S.packs=[{id:'test-paper',title:'Test',questions:Array.from({length:50},(_,i)=>({no:i+1,subject:i<25?'Geography':'Economy',topic:'General',text:'Question',answer:'A',options:{A:'Yes',B:'No'}}))}];rebuild();`);
+  run(`render=()=>{};toast=()=>{};S.ready=true;S.auth='none';S.space='static';DASH.scope='static';S.packs=[{id:'test-paper',title:'Test',questions:Array.from({length:50},(_,i)=>({no:i+1,subject:i<25?'Geography':'Economy',topic:'General',text:'Question',answer:'A',options:{A:'Yes',B:'No'}}))}];rebuild();`);
   const account=async(user='alice')=>{run(`S.user={id:${JSON.stringify(user)}};S.storage='cloud';S.store=supaBackend(sb,${JSON.stringify(user)});`);await run('loadTestHistory(S.store,S.storage)');};
   return {run,account,rows,storage,calls,hooks,fail,context,flush:()=>run('TEST_HISTORY.chain')};
 }
 test('production starts with no invented history and account loads never seed records',async()=>{
   const f=fixture();await f.account();
   assert.equal(f.run('readTestHistory().length'),0);assert.equal(f.calls.filter(c=>c.kind==='write').length,0);
-  assert.equal(f.run(`dashProgressChart().includes('No 50-question tests recorded here yet')&&!dashProgressChart().includes('Example history')`),true);
+  assert.equal(f.run(`dashProgressChart().includes('No 50-question saved tests available')&&!dashProgressChart().includes('Example history')`),true);
   assert.ok(!source.includes('function demoTestHistory'));
 });
 test('finishing a test stores counts, subjects and marks once, without altering question data',async()=>{
@@ -114,4 +114,20 @@ test('saving a later result does not hide an earlier result still waiting for re
   const f=fixture();await f.account();f.fail.write=true;f.context.result=sample('first');f.run('recordTestResult(result)');await f.flush();
   f.fail.write=false;f.context.result=sample('second');f.run('recordTestResult(result)');await f.flush();
   assert.equal(f.run('TEST_HISTORY.pending.size'),1);assert.equal(f.run('TEST_HISTORY.state'),'error');assert.ok(f.run('testHistoryStatus()').includes('Retry sync'));
+});
+test('test-progress graph appears only in Static and other sections cannot record new test results',()=>{
+  const f=fixture();
+  assert.equal(f.run(`(()=>{for(const scope of ['mixed','ca','cse','csat','capf']){DASH.scope=scope;if(dashProgressChart()!==''||viewSwot().includes('id="swot-progress-title"')||!viewSwot().includes('Your subject profile'))return false;}DASH.scope='static';if(!dashProgressChart().includes('id="swot-progress-title"'))return false;for(const space of ['ca','cse','csat','capf']){S.space=space;if(saveCompletedTest({done:true,uids:Array(50).fill('q'),res:{q:{ok:true}}}))return false;}return readTestHistory().length===0;})()`),true);
+});
+test('saved test summaries use existing latest outcomes without creating attempt history or changing data',()=>{
+  const f=fixture();
+  assert.equal(f.run(`(()=>{S.prog=Object.fromEntries(S.qs.map((q,i)=>[q.uid,i<30?{a:1,l:'c',t:1000+i}:i<45?{a:1,l:'w',t:1000+i}:{a:0,sk:1,t:1000+i}]));const before=JSON.stringify({packs:S.packs,prog:S.prog}),row=savedStaticTests()[0],view=progressHistory();return row.correct===30&&row.incorrect===15&&row.skipped===5&&row.marks===50.1&&row.date===1049&&row.mode==='saved'&&view.view==='saved'&&view.savedCount===1&&view.recordedCount===0&&readTestHistory().length===0&&before===JSON.stringify({packs:S.packs,prog:S.prog});})()`),true);
+});
+test('incomplete test papers do not get invented skips, dates or completion records',()=>{
+  const f=fixture();
+  assert.equal(f.run(`(()=>{S.prog={[S.qs[0].uid]:{a:1,l:'c'}};if(savedStaticTests().length)return false;S.prog=Object.fromEntries(S.qs.map(q=>[q.uid,{a:1,l:'c'}]));const row=savedStaticTests()[0];return row.date===null&&testDate(row.date)==='Date unavailable'&&readTestHistory().length===0;})()`),true);
+});
+test('saved summaries and recorded attempts stay distinct and preserve subject filtering',async()=>{
+  const f=fixture();await f.account();f.context.result=sample();f.run('recordTestResult(result)');await f.flush();
+  assert.equal(f.run(`(()=>{S.prog=Object.fromEntries(S.qs.map(q=>[q.uid,{a:1,l:'w',t:100}]));const automatic=progressHistory();DASH.testView='saved';DASH.testSubject='Geography';const saved=progressHistory();DASH.testView='attempts';const attempts=progressHistory();return automatic.view==='attempts'&&saved.rows[0].marks===-16.5&&saved.rows[0].maxMarks===50&&attempts.rows[0].marks===50&&readTestHistory()[0].marks===50.1;})()`),true);
 });

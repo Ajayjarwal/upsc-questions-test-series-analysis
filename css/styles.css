@@ -1155,6 +1155,9 @@ body.swot-topic-open{overflow:hidden}
 .swot-test-tip-head strong{font-size:13px;font-weight:600;white-space:nowrap}
 .swot-test-tip-head>span{font-size:11px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .swot-test-tip-subject{margin-top:5px;font-size:11px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+.swot-test-tip-paper{margin-top:5px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.swot-progress-source{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 14px;width:fit-content;max-width:100%}
+.swot-progress-source button{min-height:36px;font-size:13px}
 .swot-test-tip-marks{display:flex;align-items:baseline;gap:6px;margin:6px 0;line-height:1.2}
 .swot-test-tip-marks strong{font-size:22px;color:var(--gold);line-height:1}
 .swot-test-tip-marks>span{color:var(--muted);font-size:12px}
