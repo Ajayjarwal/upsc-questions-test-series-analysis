@@ -87,6 +87,7 @@ function localBackend(K="recall-desk-v1"){
   const read=()=>{try{return JSON.parse(localStorage.getItem(K))||{packs:{},prog:{}};}catch(e){return {packs:{},prog:{}};}};
   const write=d=>{try{localStorage.setItem(K,JSON.stringify(d));}catch(e){throw new Error("This browser blocked saving.");}};
   return {
+    historyOwner:"browser:"+K,
     async load(){const d=read();return {packs:Object.values(d.packs).map(p=>({...p,chunks:1})),prog:d.prog};},
     async savePack(p){const d=read();d.packs[p.id]={id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions};write(d);},
     async saveProg(pid,items){const d=read();d.prog[pid]=items;write(d);},
@@ -97,6 +98,16 @@ function supaBackend(sb,uid){
   const ck=r=>{if(r.error)throw new Error(r.error.message||"Database error");return r.data||[];};
   return {
     quoteOwner:"cloud:"+uid,
+    async loadTestResults(){
+      const out=[],size=1000;
+      for(let from=0;;from+=size){
+        const rows=ck(await sb.from("test_sessions").select("result").eq("user_id",uid).order("completed_at",{ascending:true}).order("id",{ascending:true}).range(from,from+size-1));
+        out.push(...rows.map(row=>row.result));if(rows.length<size)return out;
+      }
+    },
+    async saveTestResult(result){
+      ck(await sb.from("test_sessions").upsert({user_id:uid,id:result.id,result,completed_at:new Date(result.date).toISOString()},{onConflict:"user_id,id",ignoreDuplicates:true}));
+    },
     async loadQuotes(){
       const r=await sb.from("quote_collections").select("quotes").eq("user_id",uid).maybeSingle();
       if(r.error)throw Object.assign(new Error(r.error.message),{code:r.error.code});
@@ -1428,12 +1439,12 @@ async function authMagic(){
   const r=await S.sb.auth.signInWithOtp({email,options:{emailRedirectTo:authBack()}});
   S.authMsg=r.error?{text:r.error.message,bad:1}:{text:"Login link sent. Open it on this device."};render();
 }
-function resetData(){S.store=null;S.storage="browser";S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();resetQuoteSession();}
+function resetData(){resetTestHistory();S.store=null;S.storage="browser";S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();resetQuoteSession();}
 
 /* ---------- backup ---------- */
 function buildBackup(){
   const progress={};for(const p of S.packs)progress[p.id]=itemsFor(p.id);
-  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions})),progress});
+  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions})),progress,test_history:readTestHistory()});
 }
 function buildAnalysis(){
   const cell=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
@@ -1462,7 +1473,7 @@ function parseBackup(text){
     if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs});
   }
   if(!packs.length)return {error:"No question sets were found in this backup."};
-  return {packs,progress:d.progress&&typeof d.progress==="object"?d.progress:{},exported:d.exported||""};
+  return {packs,progress:d.progress&&typeof d.progress==="object"?d.progress:{},testHistory:normalizeTestHistory(d.test_history),exported:d.exported||""};
 }
 async function restoreBackup(){
   const b=S.bk.parsed;if(!b)return;
@@ -1479,6 +1490,8 @@ async function restoreBackup(){
     queueSave(p.id);
   }
   await flush();
+  for(const record of b.testHistory||[])recordTestResult(record);
+  await TEST_HISTORY.chain;
   const n=b.packs.reduce((a,p)=>a+p.questions.length,0);
   S.bk={parsed:null,error:""};toast("Restored "+b.packs.length+" set"+(b.packs.length===1?"":"s")+", "+n+" questions");render();
 }
@@ -1773,7 +1786,7 @@ document.addEventListener("change",e=>{
 document.addEventListener("keydown",e=>{
   if(document.getElementById("ui-navigation-menu")?.open)return;
   if(document.getElementById("quote-dialog")?.open||document.getElementById("swot-topic-dialog")?.open)return;
-  if(e.target?.dataset?.dashAct==="radar-score"){if(e.key==="Enter"||e.key===" ")e.preventDefault();return;}
+  if(["radar-score","test-point"].includes(e.target?.dataset?.dashAct)){if(e.key==="Enter"||e.key===" ")e.preventDefault();return;}
   if(DASH.open&&S.ready&&["none","ok"].includes(S.auth))return;
   if((e.key==="Enter"||e.key===" ")&&["markreview","reviewmarked"].includes(e.target?.dataset?.act))return;
   if(S.auth==="login"&&e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){authGo();e.preventDefault();return;}
@@ -1811,7 +1824,7 @@ async function openBank(store,mode){
   try{
     const d=await store.load();S.packs=d.packs;rebuild();applyProg(d.prog);
     S.store=store;S.ready=true;S.bankRetry=null;
-    const quotesReady=loadStoredQuotes(store,mode);render();await quotesReady;
+    const quotesReady=loadStoredQuotes(store,mode),testsReady=loadTestHistory(store,mode);render();await Promise.all([quotesReady,testsReady]);
   }catch(e){
     S.bankError="Could not load your "+(mode==="cloud"||mode==="account"?"account":"browser")+" data: "+((e&&e.message)||"unknown error");
   }
@@ -1835,7 +1848,7 @@ document.addEventListener("click",event=>{
 });
 
 /* ---------- Learning dashboard ---------- */
-const DASH={open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
+const DASH={testLength:50,testSubject:"",open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
 const DASH_BANDS={strength:{label:"Strengths",rule:"Above 70%",hint:"Keep these warm with light revision",colour:"#61d9a0"},opportunity:{label:"Opportunities",rule:"60–70%",hint:"A little practice can make these strengths",colour:"#86aaff"},weakness:{label:"Weaknesses",rule:"30–59%",hint:"Revisit concepts, then practise",colour:"#efc65d"},threat:{label:"Threats",rule:"Below 30%",hint:"Give these topics focused attention",colour:"#ff7d86"}};
 const DASH_MIN=5;
 const dashModeName=()=>({first:"First attempt",latest:"Latest answer",repeat:"Repeat practice"}[DASH.mode]);
@@ -1953,6 +1966,151 @@ function dashMixedTable(){
   if(DASH.scope!=="mixed")return "";
   return `<section class="swot-panel"><div class="swot-panel-heading"><div><h2>Your section balance</h2><p>Compare your own question banks using the same accuracy basis.</p></div></div><div class="swot-comparison-wrap"><table class="swot-comparison"><thead><tr><th>Section</th><th>${dashModeName()} accuracy</th><th>Bank coverage</th><th>Open mistakes</th><th>Reviews due</th></tr></thead><tbody>${Object.entries(SPACES).map(([key,space])=>{const a=dashStats(dashQuestions(key,""));return `<tr><th><button class="linkbtn" data-dash-act="scope" data-value="${key}">${space.label}</button></th><td><strong>${dashPercent(a.pct)}</strong><small>${a.ok}/${a.n} correct</small></td><td>${dashPercent(a.coverage)}<small>${a.answered}/${a.bank} answered</small></td><td>${a.mistakes}</td><td>${a.due}</td></tr>`;}).join("")}</tbody></table></div><p class="swot-panel-foot">Mixed counts each question within its own bank. Imports repeated across sections remain separate; raw exam marks are not combined.</p></section>`;
 }
+/* Completed tests are append-only snapshots, separate from per-question progress. */
+const TEST_HISTORY_KEY=LOCAL_PREVIEW?"solo-test-history-preview-v1":"solo-test-history-v1";
+const TEST_HISTORY={owner:"",rows:[],pending:new Set(),state:"idle",error:"",generation:0,store:null,remote:false,chain:Promise.resolve()};
+const testMarks=(correct,incorrect)=>Math.round((correct*2-incorrect*.66)*100)/100;
+const testDate=(t,full=false)=>new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short",...(full?{year:"numeric"}:{})});
+function normalizeTestResult(row){
+  if(!row||row.demo||typeof row.id!=="string"||!row.id||row.id.length>200||![50,100].includes(row.total)||!Object.hasOwn(SPACES,row.space)||!Number.isFinite(row.date)||!Number.isFinite(new Date(row.date).getTime())||!["exam","practice"].includes(row.mode)||![row.correct,row.incorrect,row.skipped].every(n=>Number.isInteger(n)&&n>=0)||row.correct+row.incorrect+row.skipped!==row.total||row.marks!==testMarks(row.correct,row.incorrect)||row.maxMarks!==row.total*2)return null;
+  const result={id:row.id,date:row.date,total:row.total,space:row.space,mode:row.mode,correct:row.correct,incorrect:row.incorrect,skipped:row.skipped,marks:row.marks,maxMarks:row.maxMarks,sourceExam:["CSE","CAPF","mixed"].includes(row.sourceExam)?row.sourceExam:"",label:String(row.label||"Completed test").slice(0,120)};
+  if(row.bySubject&&typeof row.bySubject==="object"&&!Array.isArray(row.bySubject)){
+    const parts=Object.entries(row.bySubject);
+    if(parts.length&&parts.every(([name,a])=>name&&validTestSubject(a,row.total))&&["total","correct","incorrect","skipped"].every(key=>parts.reduce((n,[,a])=>n+a[key],0)===row[key]))result.bySubject=Object.fromEntries(parts.map(([name,a])=>[name,{total:a.total,correct:a.correct,incorrect:a.incorrect,skipped:a.skipped,marks:a.marks,maxMarks:a.maxMarks}]));
+  }
+  return result;
+}
+function normalizeTestHistory(rows){
+  const unique=new Map();
+  if(Array.isArray(rows))for(const row of rows){const value=normalizeTestResult(row);if(value&&!unique.has(value.id))unique.set(value.id,value);}
+  return [...unique.values()].sort((a,b)=>a.date-b.date||a.id.localeCompare(b.id));
+}
+function readTestHistory(){return TEST_HISTORY.rows;}
+function testHistoryOwner(store=S.store){return store?.historyOwner||store?.quoteOwner||"browser";}
+function cacheTestHistory(){
+  if(!TEST_HISTORY.owner)return false;
+  try{localStorage.setItem(TEST_HISTORY_KEY+":"+TEST_HISTORY.owner,JSON.stringify({rows:TEST_HISTORY.rows,pending:[...TEST_HISTORY.pending]}));return true;}catch(error){return false;}
+}
+function resetTestHistory(){
+  TEST_HISTORY.generation++;TEST_HISTORY.owner="";TEST_HISTORY.rows=[];TEST_HISTORY.pending=new Set();TEST_HISTORY.state="idle";TEST_HISTORY.error="";TEST_HISTORY.store=null;TEST_HISTORY.remote=false;TEST_HISTORY.chain=Promise.resolve();
+}
+function historyRender(){if(DASH.open&&S.ready)render();}
+function queueTestSave(record){
+  const h=TEST_HISTORY,store=h.store,owner=h.owner,generation=h.generation;
+  if(!h.remote)return Promise.resolve(true);
+  h.chain=h.chain.catch(()=>{}).then(async()=>{
+    if(h.owner!==owner||h.generation!==generation||h.store!==store)return false;
+    h.state="saving";historyRender();
+    try{
+      await store.saveTestResult(record);
+      if(h.owner!==owner||h.generation!==generation||h.store!==store)return false;
+      h.pending.delete(record.id);h.state=h.pending.size?"saving":"ready";h.error="";cacheTestHistory();historyRender();return true;
+    }catch(error){
+      if(h.owner===owner&&h.generation===generation&&h.store===store){h.state="error";h.error="A completed test is waiting to sync. Your question progress is saved separately.";cacheTestHistory();historyRender();}
+      return false;
+    }
+  });
+  return h.chain;
+}
+function recordTestResult(row){
+  const value=normalizeTestResult(row);if(!value)return false;
+  const h=TEST_HISTORY;
+  if(!h.owner){h.owner=testHistoryOwner();h.store=S.store;h.remote=!!S.store?.loadTestResults&&!!S.store?.saveTestResult;h.state="ready";}
+  if(h.rows.some(item=>item.id===value.id))return false;
+  h.rows=normalizeTestHistory([...h.rows,value]);
+  if(h.remote)h.pending.add(value.id);
+  const cached=cacheTestHistory();
+  if(h.remote)queueTestSave(value);
+  else if(!cached){h.state="error";h.error="This browser could not save the test result. Download a backup before leaving this page.";}
+  else{h.state="ready";h.error="";}
+  historyRender();return true;
+}
+async function loadTestHistory(store,mode){
+  const h=TEST_HISTORY,owner=testHistoryOwner(store),previous=h.owner===owner?{rows:h.rows,pending:[...h.pending]}:{rows:[],pending:[]},generation=++h.generation;
+  h.owner=owner;h.store=store;h.remote=!!store?.loadTestResults&&!!store?.saveTestResult;h.chain=Promise.resolve();h.error="";
+  let cached={};try{cached=JSON.parse(localStorage.getItem(TEST_HISTORY_KEY+":"+owner)||"{}");}catch(error){}
+  h.rows=normalizeTestHistory([...previous.rows,...normalizeTestHistory(cached.rows)]);h.pending=new Set([...previous.pending,...(Array.isArray(cached.pending)?cached.pending:[])].filter(id=>h.rows.some(row=>row.id===id)));
+  if(!h.remote){h.state="ready";if(h.rows.length&&!cacheTestHistory()){h.state="error";h.error="This browser could not save the test results. Download a backup before leaving this page.";}return;}
+  h.state="loading";historyRender();
+  try{
+    const saved=normalizeTestHistory(await store.loadTestResults());
+    if(h.owner!==owner||h.generation!==generation||h.store!==store)return;
+    // Sessions are immutable and append-only; merge rather than losing a test saved during loading.
+    h.rows=normalizeTestHistory([...saved,...h.rows]);for(const row of saved)h.pending.delete(row.id);
+    h.state="ready";h.error="";cacheTestHistory();
+    for(const id of [...h.pending]){const row=h.rows.find(item=>item.id===id);if(row)queueTestSave(row);}
+  }catch(error){
+    if(h.owner===owner&&h.generation===generation&&h.store===store){h.state="error";h.error="Completed-test history could not sync. Your question bank is still available.";}
+  }
+  if(h.owner===owner&&h.generation===generation)historyRender();
+}
+function testHistoryStatus(){
+  const h=TEST_HISTORY;
+  if(h.state==="error")return esc(h.error)+' <button class="linkbtn" data-dash-act="history-retry">Retry sync</button>';
+  if(h.state==="loading")return "Loading your completed tests…";
+  if(h.state==="saving")return "Saving the completed test to your account…";
+  return h.remote?"Completed tests saved to your account.":"Completed tests saved in this browser.";
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.ready&&S.store&&TEST_HISTORY.remote&&(!S.quiz||S.quiz.done))loadTestHistory(S.store,S.storage);});
+
+function testSubjects(qs,results){
+  const groups=new Map();
+  qs.forEach((q,i)=>{if(!q?.subject||!results[i]||results[i].deferred)return;const name=q.subject;if(!groups.has(name))groups.set(name,{total:0,correct:0,incorrect:0,skipped:0});const a=groups.get(name),r=results[i];a.total++;if(r.skipped)a.skipped++;else if(r.ok)a.correct++;else a.incorrect++;});
+  return Object.fromEntries([...groups].map(([name,a])=>[name,{...a,marks:testMarks(a.correct,a.incorrect),maxMarks:a.total*2}]));
+}
+function validTestSubject(a,total){return a&&Number.isInteger(a.total)&&a.total>0&&a.total<=total&&[a.correct,a.incorrect,a.skipped].every(n=>Number.isInteger(n)&&n>=0)&&a.correct+a.incorrect+a.skipped===a.total&&a.marks===testMarks(a.correct,a.incorrect)&&a.maxMarks===a.total*2;}
+function progressHistory(){
+  const saved=readTestHistory();
+  const scopeRows=saved.filter(row=>(DASH.scope==="mixed"||row.space===DASH.scope)&&(DASH.scope!=="csat"||!DASH.source||(DASH.source==="untagged"?!row.sourceExam:row.sourceExam===DASH.source)));
+  const subjects=[...new Set([...dashQuestions().map(q=>q.subject),...scopeRows.flatMap(row=>Object.keys(row.bySubject||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  let rows=scopeRows.filter(row=>row.total===DASH.testLength),missingSubjects=0;
+  if(DASH.testSubject){missingSubjects=rows.filter(row=>!row.bySubject).length;rows=rows.flatMap(row=>{const a=Object.hasOwn(row.bySubject||{},DASH.testSubject)?row.bySubject[DASH.testSubject]:null;return validTestSubject(a,row.total)?[{...row,...a,paperTotal:row.total,subject:DASH.testSubject}]:[];});}
+  rows.sort((a,b)=>a.date-b.date||a.id.localeCompare(b.id));
+  return {rows,subjects,missingSubjects};
+}
+function saveCompletedTest(Q){
+  if(!Q?.done||Q.progressSaved||![50,100].includes(Q.uids.length)||Q.kind==="Daily revision")return false;
+  const results=Q.uids.map(uid=>Q.res[uid]);
+  if(results.some(r=>!r||r.deferred))return false;
+  const correct=results.filter(r=>r.ok&&!r.skipped).length,skipped=results.filter(r=>r.skipped).length,incorrect=results.length-correct-skipped;
+  const qs=Q.uids.map(uid=>S.byUid.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Date.now();
+  const record={id:`${S.space}:${Q.start}:${date}`,date,total:Q.uids.length,space:S.space,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
+  const added=recordTestResult(record);Q.progressSaved=true;return added;
+}
+const finishQuizBeforeProgress=finishQuiz;
+finishQuiz=function(){const Q=S.quiz,wasDone=Q?.done;finishQuizBeforeProgress();if(!wasDone&&Q?.done)saveCompletedTest(Q);};
+function dashProgressChart(){
+  const {rows,subjects,missingSubjects}=progressHistory(),total=DASH.testLength,max=DASH.testSubject?Math.max(10,Math.ceil(Math.max(0,...rows.map(row=>row.maxMarks))/10)*10):total*2,width=Math.max(900,rows.length*26+110),height=310,left=58,right=28,top=24,bottom=48;
+  const step=max/4,min=Math.min(0,Math.floor(Math.min(0,...rows.map(r=>r.marks))/step)*step),range=max-min;
+  const x=i=>rows.length===1?(width+left-right)/2:left+i*(width-left-right)/(rows.length-1),y=v=>top+(max-v)/range*(height-top-bottom),ticks=[];
+  for(let value=min;value<=max;value+=step)ticks.push(value);
+  const labelEvery=Math.max(1,Math.ceil(rows.length/7));
+  const points=rows.map((row,i)=>`${x(i).toFixed(2)},${y(row.marks).toFixed(2)}`).join(" ");
+  const graph=rows.length?`<div class="swot-progress-scroll"><svg class="swot-test-chart" viewBox="0 0 ${width} ${height}" style="min-width:${Math.max(600,rows.length*20)}px" role="group" aria-labelledby="swot-test-chart-title swot-test-chart-desc"><title id="swot-test-chart-title">${total}-question test marks over time</title><desc id="swot-test-chart-desc">Recorded completed tests. Marks from ${rows.length} tests, ordered by completion date. Hover, tap, or focus a point for its date, correct, incorrect, skipped and marks.</desc>${ticks.map(value=>`<line class="swot-test-grid${value===0?' zero':''}" x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text class="swot-test-axis" x="${left-12}" y="${y(value)+5}" text-anchor="end">${value}</text>`).join("")}<polyline class="swot-test-line" points="${points}"/>${rows.map((row,i)=>`${(i%labelEvery===0&&i<rows.length-labelEvery)||i===rows.length-1?`<text class="swot-test-axis" x="${x(i)}" y="${height-14}" text-anchor="${i===0?'start':i===rows.length-1?'end':'middle'}">${testDate(row.date)}</text>`:""}<g class="swot-test-point" tabindex="0" role="button" data-dash-act="test-point" data-test-point="${i}" aria-label="${esc(testDate(row.date,true)+', '+SPACES[row.space].label+', '+testPointSubjects(row)+', '+row.correct+' correct, '+row.incorrect+' incorrect, '+row.skipped+' skipped, '+row.marks+' marks out of '+row.maxMarks)}" aria-describedby="swot-test-tooltip"><circle class="swot-test-hit" cx="${x(i)}" cy="${y(row.marks)}" r="13"/><circle class="swot-test-dot" cx="${x(i)}" cy="${y(row.marks)}" r="5"/></g>`).join("")}</svg></div>`:`<div class="swot-progress-empty">${ic("quiz")}<h3>No ${DASH.testSubject?esc(DASH.testSubject)+" results for ":""}${total}-question tests recorded here yet</h3><p>Finish a ${total}-question test in this section to add its result.</p></div>`;
+  return `<section class="swot-panel swot-progress" aria-labelledby="swot-progress-title"><div class="swot-panel-heading"><div><div class="swot-progress-title"><h2 id="swot-progress-title">Your test progress</h2></div><p>${DASH.testSubject?esc(DASH.testSubject)+" · subject marks":"Marks over time"} · one point per completed test</p></div><div class="swot-progress-filters"><div class="swot-test-length"><label for="swot-test-subject">Subject</label><select id="swot-test-subject"><option value="">All subjects</option>${subjects.map(subject=>`<option value="${esc(subject)}"${DASH.testSubject===subject?' selected':''}>${esc(subject)}</option>`).join("")}</select></div><div class="swot-test-length"><label for="swot-test-length">Test length</label><select id="swot-test-length"><option value="50"${total===50?' selected':''}>Half-length · 50 questions</option><option value="100"${total===100?' selected':''}>Full-length · 100 questions</option></select></div></div></div><div class="swot-progress-plot">${graph}<div id="swot-test-tooltip" class="swot-test-tooltip" role="tooltip" hidden></div></div><div class="swot-progress-caption"><span><i></i>${DASH.testSubject?"Subject marks":"Total marks <small>/ "+max+"</small>"}</span><span>+2 correct · −0.66 incorrect · 0 skipped</span></div><p class="swot-panel-foot">${testHistoryStatus()} Tracking starts with tests completed after this update. ${DASH.testSubject?"Showing this subject’s portion of each "+total+"-question test. ":""}${missingSubjects?missingSubjects+" older tests have no saved subject breakdown and are excluded. ":""}Hover or tap a point for the full result.</p></section>`;
+}
+function testPointSubjects(row){
+  const names=row.subject?[row.subject]:Object.entries(row.bySubject||{}).filter(([,a])=>validTestSubject(a,row.total)).map(([name])=>name);
+  return names.length?(names.length===1?"Subject: ":"Subjects: ")+names.map(dashShort).join(" · "):"Subject: Not recorded";
+}
+function showTestPoint(point){
+  const row=progressHistory().rows[Number(point.dataset.testPoint)],tip=document.getElementById("swot-test-tooltip"),plot=point.closest(".swot-progress-plot");if(!row||!tip||!plot)return;
+  document.querySelectorAll('.swot-test-point.active').forEach(el=>el.classList.remove('active'));point.classList.add('active');
+  tip.innerHTML=`<div class="swot-test-tip-head"><strong>${testDate(row.date,true)}</strong><span>${esc(row.space==="ca"?"CA":SPACES[row.space].label)} · ${row.mode==="exam"?'Exam':'Practice'}</span></div><div class="swot-test-tip-subject">${esc(testPointSubjects(row))}</div><div class="swot-test-tip-marks"><strong>${row.marks.toFixed(2)}</strong><span>/ ${row.maxMarks} marks</span></div><div class="swot-test-tip-counts"><span><b>${row.correct}</b>Correct</span><span><b>${row.incorrect}</b>Incorrect</span><span><b>${row.skipped}</b>Skipped</span></div>`;
+  tip.hidden=false;const dot=point.querySelector('.swot-test-dot').getBoundingClientRect(),box=plot.getBoundingClientRect();
+  tip.style.left=Math.max(8,Math.min(dot.left-box.left+dot.width/2-tip.offsetWidth/2,box.width-tip.offsetWidth-8))+"px";
+  const gap=14,above=dot.top-box.top-tip.offsetHeight-gap,below=dot.bottom-box.top+gap;
+  const fitsBelow=dot.bottom+gap+tip.offsetHeight<=window.innerHeight-8;
+  // Flip below high points instead of clamping the box over the selected dot.
+  tip.style.top=(above>=8||(!fitsBelow&&dot.top-tip.offsetHeight-gap>=8)?above:below)+"px";
+}
+document.addEventListener("change",event=>{if(event.target.id==="swot-test-subject"){const subject=event.target.value;if(subject&&!progressHistory().subjects.includes(subject))return;DASH.testSubject=subject;render();return;}if(event.target.id!=="swot-test-length")return;const length=Number(event.target.value);if(![50,100].includes(length))return;DASH.testLength=length;render();});
+document.addEventListener("pointerover",event=>{const point=event.target.closest?.('[data-test-point]');if(point)showTestPoint(point);});
+document.addEventListener("pointerout",event=>{const point=event.target.closest?.('[data-test-point]');if(point&&!point.contains(event.relatedTarget)&&point!==document.activeElement){const tip=document.getElementById('swot-test-tooltip');if(tip)tip.hidden=true;point.classList.remove('active');}});
+document.addEventListener("focusin",event=>{const point=event.target.closest?.('[data-test-point]');if(point)showTestPoint(point);});
+document.addEventListener("focusout",event=>{const point=event.target.closest?.('[data-test-point]');if(point){const tip=document.getElementById('swot-test-tooltip');if(tip)tip.hidden=true;point.classList.remove('active');}});
+document.addEventListener("scroll",event=>{if(!event.target.classList?.contains('swot-progress-scroll'))return;const tip=document.getElementById('swot-test-tooltip');if(tip)tip.hidden=true;},true);
+
 function dashMetrics(a,extra=false){
   const metrics=extra?[[dashPercent(a.surePct),"Accuracy when sure",`${a.sureOk}/${a.sure} latest sure answers correct`],[a.avgTime===null?"—":a.avgTime+'<small>s</small>',"Recorded answer time",`${a.timed} timed attempts · all recorded practice`]]:[[dashPercent(a.pct),dashModeName()+" accuracy",`${a.ok}/${a.n} answered correctly`],[dashPercent(a.coverage),"Question-bank coverage",`${a.answered}/${a.bank} questions answered`],[a.mistakes,"Open mistakes","Wrong and skipped questions"],[a.due,"Reviews due",`${a.done} practised in revision today`]];
   return `<section class="swot-metrics${extra?' swot-metrics-extra':''}" aria-label="${extra?'Confidence and timing':'Learning statistics'}">${metrics.map(([value,label,note])=>`<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join("")}</section>`;
@@ -1963,10 +2121,10 @@ function dashMoreInsights(qs,rows,a){
 function viewSwot(){
   const qs=dashQuestions(),a=dashStats(qs),rows=dashRows(qs),subjects=dashSubjectRows(qs),topicRows=dashRows(qs,DASH.mode,"topic");
   const scopeLabel=DASH.scope==="mixed"?"All five sections":SPACES[DASH.scope].label;
-  return `<main class="swot-dash"><section class="swot-hero"><div><div class="ui-overline">Your learning, in focus <span class="ui-context-label">Your question bank</span></div><h1>SWOT analysis</h1><p>Know what’s working. See what deserves your next hour.</p></div><span class="swot-date">${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</span></section><nav class="swot-scope-tabs" aria-label="Dashboard sections">${[["mixed","Mixed"],...Object.entries(SPACES).map(([key,s])=>[key,s.label])].map(([key,label])=>`<button data-dash-act="scope" data-value="${key}" aria-pressed="${DASH.scope===key}">${label}</button>`).join("")}</nav><section class="swot-controls" aria-label="Analysis controls"><div><span class="label">Accuracy basis</span><div class="seg">${[["first","First attempt"],["latest","Latest answer"],["repeat","Repeat practice"]].map(([key,label])=>`<button data-dash-act="mode" data-value="${key}" aria-pressed="${DASH.mode===key}">${label}</button>`).join("")}</div></div>${DASH.scope==="csat"?`<div><span class="label">CSAT source</span><div class="seg">${[["","All sources"],["CSE","CSE"],["CAPF","CAPF"],["untagged","Untagged"]].map(([key,label])=>`<button data-dash-act="source" data-value="${key}" aria-pressed="${DASH.source===key}">${label}</button>`).join("")}</div></div>`:`<p>${scopeLabel} · ${a.bank} imported questions<br><span>Choose the same basis for your SWOT, subject chart, and heatmap.</span></p>`}</section>${DASH.mode==="first"&&a.unknown?`<div class="swot-history-note">${a.unknown} earlier questions have no recorded first attempt. <button class="linkbtn" data-dash-act="mode" data-value="latest">View their latest answers</button></div>`:""}${dashMetrics(a)}<section aria-labelledby="swot-summary-title"><div class="ui-section-title"><h2 id="swot-summary-title">Your SWOT at a glance</h2><span>${DASH_MIN}+ distinct answered questions per classified ${DASH.heatBy}</span></div><div class="swot-summary-grid">${Object.entries(DASH_BANDS).map(([key,b])=>`<button class="swot-summary ${key}" data-dash-act="band" data-value="${key}" aria-pressed="${DASH.band===key}"><span><b>${b.label}</b><small>${b.rule}</small></span><strong>${rows.filter(r=>r.stats.band===key).length}<small>${DASH.heatBy}s</small></strong><span class="swot-summary-hint">${b.hint} ${UI_ARROW}</span></button>`).join("")}</div><div class="swot-evidence-note"><span>${rows.filter(r=>r.stats.band==="limited").length} with limited data · ${rows.filter(r=>["new","unrecorded"].includes(r.stats.band)).length} without results for this basis</span><button class="linkbtn" data-dash-act="band" data-value="all">Show every band</button></div></section>${dashNextActions(topicRows)}<div class="swot-visual-grid"><section class="swot-panel swot-profile"><h2>Your subject profile</h2><p class="swot-subtitle">Only your performance. ${dashModeName()} accuracy.</p><div class="swot-radar-wrap">${dashRadar(subjects)}</div><details class="swot-subject-values" open><summary>Subject values &amp; evidence</summary>${subjects.map(s=>`<button data-dash-act="find-subject" data-value="${esc(s.name)}"><span>${esc(s.name)}<small>${s.stats.ok}/${s.stats.n} correct · ${s.stats.observed} distinct questions</small></span><strong>${dashPercent(s.stats.pct)}</strong></button>`).join("")}</details><p class="swot-panel-foot">Hover or tap a chart point for its score. The chart has one series: you. Values from fewer than ${DASH_MIN} distinct answered questions are provisional.</p></section>${dashHeatmap(rows)}</div>${dashMoreInsights(qs,topicRows,a)}<footer class="ui-footer"><span>Based on your recorded practice</span><span>Your saved questions and progress</span></footer></main>`;
+  return `<main class="swot-dash"><section class="swot-hero"><div><div class="ui-overline">Your learning, in focus <span class="ui-context-label">Your question bank</span></div><h1>SWOT analysis</h1><p>Know what’s working. See what deserves your next hour.</p></div><span class="swot-date">${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</span></section><nav class="swot-scope-tabs" aria-label="Dashboard sections">${[["mixed","Mixed"],...Object.entries(SPACES).map(([key,s])=>[key,s.label])].map(([key,label])=>`<button data-dash-act="scope" data-value="${key}" aria-pressed="${DASH.scope===key}">${label}</button>`).join("")}</nav><section class="swot-controls" aria-label="Analysis controls"><div><span class="label">Accuracy basis</span><div class="seg">${[["first","First attempt"],["latest","Latest answer"],["repeat","Repeat practice"]].map(([key,label])=>`<button data-dash-act="mode" data-value="${key}" aria-pressed="${DASH.mode===key}">${label}</button>`).join("")}</div></div>${DASH.scope==="csat"?`<div><span class="label">CSAT source</span><div class="seg">${[["","All sources"],["CSE","CSE"],["CAPF","CAPF"],["untagged","Untagged"]].map(([key,label])=>`<button data-dash-act="source" data-value="${key}" aria-pressed="${DASH.source===key}">${label}</button>`).join("")}</div></div>`:`<p>${scopeLabel} · ${a.bank} imported questions<br><span>Choose the same basis for your SWOT, subject chart, and heatmap.</span></p>`}</section>${DASH.mode==="first"&&a.unknown?`<div class="swot-history-note">${a.unknown} earlier questions have no recorded first attempt. <button class="linkbtn" data-dash-act="mode" data-value="latest">View their latest answers</button></div>`:""}${dashMetrics(a)}${dashProgressChart()}<section aria-labelledby="swot-summary-title"><div class="ui-section-title"><h2 id="swot-summary-title">Your SWOT at a glance</h2><span>${DASH_MIN}+ distinct answered questions per classified ${DASH.heatBy}</span></div><div class="swot-summary-grid">${Object.entries(DASH_BANDS).map(([key,b])=>`<button class="swot-summary ${key}" data-dash-act="band" data-value="${key}" aria-pressed="${DASH.band===key}"><span><b>${b.label}</b><small>${b.rule}</small></span><strong>${rows.filter(r=>r.stats.band===key).length}<small>${DASH.heatBy}s</small></strong><span class="swot-summary-hint">${b.hint} ${UI_ARROW}</span></button>`).join("")}</div><div class="swot-evidence-note"><span>${rows.filter(r=>r.stats.band==="limited").length} with limited data · ${rows.filter(r=>["new","unrecorded"].includes(r.stats.band)).length} without results for this basis</span><button class="linkbtn" data-dash-act="band" data-value="all">Show every band</button></div></section>${dashNextActions(topicRows)}<div class="swot-visual-grid"><section class="swot-panel swot-profile"><h2>Your subject profile</h2><p class="swot-subtitle">Only your performance. ${dashModeName()} accuracy.</p><div class="swot-radar-wrap">${dashRadar(subjects)}</div><details class="swot-subject-values" open><summary>Subject values &amp; evidence</summary>${subjects.map(s=>`<button data-dash-act="find-subject" data-value="${esc(s.name)}"><span>${esc(s.name)}<small>${s.stats.ok}/${s.stats.n} correct · ${s.stats.observed} distinct questions</small></span><strong>${dashPercent(s.stats.pct)}</strong></button>`).join("")}</details><p class="swot-panel-foot">Hover or tap a chart point for its score. The chart has one series: you. Values from fewer than ${DASH_MIN} distinct answered questions are provisional.</p></section>${dashHeatmap(rows)}</div>${dashMoreInsights(qs,topicRows,a)}<footer class="ui-footer"><span>Based on your recorded practice</span><span>Your saved questions and progress</span></footer></main>`;
 }
 function openSwot(scope="mixed",heat=false){
-  DASH.open=true;DASH.scope=scope;DASH.detail=null;DASH.showQuestions=false;DASH.band="all";DASH.source="";DASH.query="";render();
+  DASH.open=true;DASH.testSubject="";DASH.scope=scope;DASH.detail=null;DASH.showQuestions=false;DASH.band="all";DASH.source="";DASH.query="";render();
   if(heat)document.getElementById("swot-heatmap")?.scrollIntoView({block:"start"});else window.scrollTo(0,0);
 }
 function dashPractise(row){
@@ -1991,15 +2149,17 @@ document.addEventListener("click",event=>{
   const el=event.target.closest("[data-dash-act]");if(!el)return;
   const act=el.dataset.dashAct,value=el.dataset.value;
   if(act==="radar-score"){el.focus({preventScroll:true});return;}
+  if(act==="test-point"){el.focus({preventScroll:true});showTestPoint(el);return;}
+  if(act==="history-retry"){loadTestHistory(S.store,S.storage);return;}
   if(act==="open"){openSwot();return;}
   if(act==="detail"){openDashTopic(el.dataset.key,el);return;}
   if(act==="close-detail"){document.getElementById("swot-topic-dialog")?.close();return;}
   if(act==="review-topic"){DASH.showQuestions=!DASH.showQuestions;const dialog=dashTopicDialog(),keep=dialog.scrollTop;dialog.innerHTML=dashTopicDetail(dashRows());dialog.scrollTop=keep;dialog.querySelector('[data-dash-act="review-topic"]')?.focus({preventScroll:true});return;}
   if(act==="practice"){const row=dashRows().find(r=>r.id===el.dataset.key)||dashRows(dashQuestions(),DASH.mode,"topic").find(r=>r.id===el.dataset.key);if(row){DASH.topicTrigger=null;document.getElementById("swot-topic-dialog")?.close();document.body.classList.remove("swot-topic-open");dashPractise(row);}return;}
   if(act==="more-topics")DASH.heatLimits[el.dataset.key]=(DASH.heatLimits[el.dataset.key]||12)+12;
-  if(act==="scope"){DASH.scope=value;DASH.source="";DASH.band="all";DASH.query="";DASH.detail=null;DASH.showQuestions=false;}
+  if(act==="scope"){DASH.testSubject="";DASH.scope=value;DASH.source="";DASH.band="all";DASH.query="";DASH.detail=null;DASH.showQuestions=false;}
   if(act==="mode"){DASH.mode=value;DASH.detail=null;DASH.showQuestions=false;}
-  if(act==="source"){DASH.source=value;DASH.detail=null;}
+  if(act==="source"){DASH.testSubject="";DASH.source=value;DASH.detail=null;}
   if(act==="band"){DASH.band=DASH.band===value?"all":value;DASH.detail=null;}
   if(act==="heatby"){DASH.heatBy=value;DASH.detail=null;}
   if(act==="expand")DASH.expanded[value]=!DASH.expanded[value];

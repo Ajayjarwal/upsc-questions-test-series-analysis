@@ -15,3 +15,15 @@ node --test tests/import-review.cjs tests/search-quotes.cjs tests/quote-sync.cjs
 ```
 
 The automated checks use fake account backends. Do not create sample records in the live account to test this change.
+
+# Completed-test progress
+
+`migrations/20261115040442_account_test_sessions.sql` adds the `test_sessions` table used by the progress graph. It is separate from questions, per-question progress and quotes. Row-level policies allow signed-in users to read and insert only their own results; updates, deletes and anonymous access are not granted. Results are immutable snapshots, so repeated retries and backup restores use the same ID without overwriting existing test outcomes.
+
+Completing a 50- or 100-question Practice or Exam session records its date, section, counts, current +2/−0.66 marks and per-subject breakdown. Daily revision, unfinished sessions and other lengths do not enter the graph. A subject filter shows only that subject's portion of the paper while the length filter still refers to the complete paper. Hover details identify the subject(s), including mixed papers.
+
+Supabase results sync per record to the account. The browser keeps a cache separated by account and retains pending results for retry if a save fails. Sign-out and account switching clear in-memory history and ignore stale network responses. Browser-only storage modes retain scoped local history without contacting Supabase. History loading and failures do not prevent use of the question bank.
+
+Backups include an optional `test_history` list. Old backups remain supported and do not erase existing test-session history. No completed-test history is reconstructed from old question-level records, and no demo results are seeded in production. Existing users will initially see an empty graph until they complete an eligible test.
+
+Run `node --test tests/*.cjs` for the regression and fake-backend history checks. Do not insert artificial test results into the live table for verification.
