@@ -110,3 +110,8 @@ test('hover subject labels distinguish mixed papers, filtered subjects and missi
   assert.equal(f.run(`testPointSubjects({...result,subject:'Geography'})`),'Subject: Geography');
   assert.equal(f.run(`testPointSubjects({...result,bySubject:undefined})`),'Subject: Not recorded');
 });
+test('saving a later result does not hide an earlier result still waiting for retry',async()=>{
+  const f=fixture();await f.account();f.fail.write=true;f.context.result=sample('first');f.run('recordTestResult(result)');await f.flush();
+  f.fail.write=false;f.context.result=sample('second');f.run('recordTestResult(result)');await f.flush();
+  assert.equal(f.run('TEST_HISTORY.pending.size'),1);assert.equal(f.run('TEST_HISTORY.state'),'error');assert.ok(f.run('testHistoryStatus()').includes('Retry sync'));
+});

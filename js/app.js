@@ -2004,7 +2004,7 @@ function queueTestSave(record){
     try{
       await store.saveTestResult(record);
       if(h.owner!==owner||h.generation!==generation||h.store!==store)return false;
-      h.pending.delete(record.id);h.state=h.pending.size?"saving":"ready";h.error="";cacheTestHistory();historyRender();return true;
+      h.pending.delete(record.id);h.state=h.pending.size?(h.error?"error":"saving"):"ready";if(!h.pending.size)h.error="";cacheTestHistory();historyRender();return true;
     }catch(error){
       if(h.owner===owner&&h.generation===generation&&h.store===store){h.state="error";h.error="A completed test is waiting to sync. Your question progress is saved separately.";cacheTestHistory();historyRender();}
       return false;
