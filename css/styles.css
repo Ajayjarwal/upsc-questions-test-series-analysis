@@ -1182,3 +1182,7 @@ body.swot-topic-open{overflow:hidden}
 .swot-progress-empty h3{color:var(--ink);font-size:19px;font-weight:500}
 .swot-progress-empty p{font-size:14px}
 @media(max-width:640px){.swot-progress .swot-panel-heading{flex-direction:column;gap:16px}.swot-progress-filters{width:100%;display:grid;grid-template-columns:1fr}.swot-test-length{width:100%}.swot-test-length select,.swot-progress-filters #swot-test-length{width:100%}.swot-progress-title h2{font-size:21px}}
+
+/* Main sections and study tools are bookmarkable links. */
+.ui-menu-item,.ui-tabs .tab{text-decoration:none}
+.ui-menu-item:focus-visible,.ui-tabs .tab:focus-visible{outline:2px solid var(--gold);outline-offset:4px}

@@ -748,7 +748,7 @@ function header(){
   const open=openMistakes().length;
   const tabs=[["practice","Practice","quiz"],["notebook","Notebook","notebook"],["marks","Bookmarks","mark"],["import","Import","book"]];
   return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${DASH.open?"Dashboard":esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${themeBtn()}</div></div>
-  <nav class="tabs ui-tabs" role="tablist" aria-label="Study tools">${tabs.map(([key,label,icon])=>`<button class="tab" role="tab" aria-selected="${S.tab===key}" data-act="tab" data-v="${key}">${icon?ic(icon):""}${label}${key==="notebook"&&open?`<span class="badge">${open}</span>`:""}</button>`).join("")}</nav></header>`;
+  <nav class="tabs ui-tabs" role="tablist" aria-label="Study tools">${tabs.map(([key,label,icon])=>`<a class="tab" role="tab" aria-selected="${S.tab===key}" href="${sectionHash(S.space,key)}" data-v="${key}" data-route>${icon?ic(icon):""}${label}${key==="notebook"&&open?`<span class="badge">${open}</span>`:""}</a>`).join("")}</nav></header>`;
 }
 
 const UI_MENU_DETAILS={
@@ -766,7 +766,7 @@ function drawUiMenu(){
   const dark=S.theme!=="light";
   dialog.innerHTML='<div class="ui-menu-head"><h2 id="ui-menu-title">Menu</h2><div class="ui-menu-controls"><button id="ui-menu-theme" class="ui-menu-theme" data-act="theme" data-ui-menu="theme" role="switch" aria-checked="'+dark+'" aria-label="Dark theme">'+(dark?MOON:SUN)+'<span class="ui-menu-switch" aria-hidden="true"><span></span></span></button><button class="ui-menu-close" data-ui-menu="close" aria-label="Close navigation menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 14 14M19 5 5 19"/></svg></button></div></div><p class="ui-menu-caption">Choose your practice space</p><nav class="ui-menu-list" aria-label="Practice sections">'+dashMenuItem()+Object.entries(SPACES).map(([key,space])=>{
     const info=UI_MENU_DETAILS[key],active=!DASH.open&&S.space===key;
-    return '<button class="ui-menu-item" data-act="space" data-v="'+key+'" data-ui-menu="select"'+(active?' aria-current="page"':'')+'><span class="ui-menu-icon">'+ic(info.icon)+'</span><span class="ui-menu-copy"><strong>'+esc(space.label)+'</strong><small>'+esc(info.description)+'</small></span>'+(active?'<span class="ui-menu-current">Current</span>':'<svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>')+'</button>';
+    return '<a class="ui-menu-item" href="'+sectionHash(key)+'" data-v="'+key+'" data-route data-ui-menu="select"'+(active?' aria-current="page"':'')+'><span class="ui-menu-icon">'+ic(info.icon)+'</span><span class="ui-menu-copy"><strong>'+esc(space.label)+'</strong><small>'+esc(info.description)+'</small></span>'+(active?'<span class="ui-menu-current">Current</span>':'<svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>')+'</a>';
   }).join("")+'</nav><div class="ui-menu-footer">'+storageStatus()+'</div>';
 }
 function ensureUiMenu(){
@@ -1715,9 +1715,7 @@ document.addEventListener("click",async e=>{
     case "check":doCheck();break;
     case "savenext":{const Q=S.quiz;if(!Q||Q.done)break;const u=Q.uids[Q.i];if(!Q.ans[u])Q.skp[u]=1;if(Q.i<Q.uids.length-1)goTo(Q.i+1);else{render();toast(Q.ans[u]?"Answer saved":"Marked as skipped");}break;}
     case "theme":{S.theme=S.theme==="light"?"dark":"light";try{localStorage.setItem("rd_theme",S.theme);}catch(err){}render();break;}
-    case "space":{if(!Object.hasOwn(SPACES,v))break;DASH.open=false;flushInBackground();S.space=v;try{localStorage.setItem("rd_space",v);}catch(err){}
-      S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.sourceExam="";S.pyqSource={sourceExam:""};S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
-      S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();render();window.scrollTo(0,0);break;}
+    case "space":{if(!Object.hasOwn(SPACES,v))break;resetPracticeSpace(v);render();window.scrollTo(0,0);break;}
     case "idmode":S.imp.idMode=v;runParse();break;
     case "newmode":S.newMode=v;render();break;
     case "next":if(S.quiz)goTo(S.quiz.i+1);break;
@@ -1728,8 +1726,8 @@ document.addEventListener("click",async e=>{
     case "finishno":S.confirmFin=false;render();break;
     case "bm":{const q=S.byUid.get(v);if(!q)break;const p=getP(v);p.b=p.b?0:1;queueSave(q.packId);render();break;}
     case "exit":{const Q0=S.quiz;if(Q0&&!Q0.done){S.confirmExit=true;render();break;}S.confirmExit=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;}
-    case "exitno":S.confirmExit=false;render();break;
-    case "exitok":S.confirmExit=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
+    case "exitno":ROUTES.pending=null;S.confirmExit=false;render();break;
+    case "exitok":{S.confirmExit=false;flushInBackground();S.quiz=null;S.tab="practice";S.view="home";const pending=ROUTES.pending;ROUTES.pending=null;if(pending)goToRoute(pending);else{render();window.scrollTo(0,0);}break;}
     case "exit_unused":S.quiz=null;S.tab="practice";S.view="home";render();window.scrollTo(0,0);break;
     case "redo":{const Q=S.quiz;startQuiz(shuffle(Q.uids.filter(u=>!Q.res[u].ok)),{mode:Q.mode,kind:"Redo",label:Q.label});break;}
     case "nbsub":S.nb.subject=v||"";render();window.scrollTo(0,0);break;
@@ -1806,7 +1804,7 @@ document.addEventListener("keydown",e=>{
   }
   if(!Q||Q.done||S.tab!=="practice")return;
   if(S.confirmFin){if(e.key==="Escape"){S.confirmFin=false;render();}return;}
-  if(S.confirmExit){if(e.key==="Escape"){S.confirmExit=false;render();}return;}
+  if(S.confirmExit){if(e.key==="Escape"){ROUTES.pending=null;S.confirmExit=false;render();}return;}
   const tag=(e.target&&e.target.tagName)||"";if(tag==="TEXTAREA"||tag==="INPUT"||tag==="SELECT"||e.metaKey||e.ctrlKey||e.altKey)return;
   const q=S.byUid.get(Q.uids[Q.i]),k=e.key.toUpperCase(),r=Q.res[Q.uids[Q.i]],locked=Q.mode!=="exam"&&r&&!r.skipped;
   let L=null;if(/^[A-F]$/.test(k))L=k;else if(/^[1-6]$/.test(k))L="ABCDEF"[Number(k)-1];
@@ -1847,6 +1845,12 @@ document.addEventListener("click",event=>{
   }
 });
 
+document.addEventListener("click",event=>{
+  const link=event.target.closest("a[data-route]");
+  if(!link||link.dataset?.route===undefined||event.defaultPrevented||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();requestPageRoute(parsePageRoute(link.getAttribute("href")));
+});
+
 /* ---------- Learning dashboard ---------- */
 const DASH={testLength:50,testSubject:"",testView:"auto",open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
 const DASH_BANDS={strength:{label:"Strengths",rule:"Above 70%",hint:"Keep these warm with light revision",colour:"#61d9a0"},opportunity:{label:"Opportunities",rule:"60–70%",hint:"A little practice can make these strengths",colour:"#86aaff"},weakness:{label:"Weaknesses",rule:"30–59%",hint:"Revisit concepts, then practise",colour:"#efc65d"},threat:{label:"Threats",rule:"Below 30%",hint:"Give these topics focused attention",colour:"#ff7d86"}};
@@ -1855,7 +1859,7 @@ const dashModeName=()=>({first:"First attempt",latest:"Latest answer",repeat:"Re
 const dashPc=(ok,n)=>n?Math.round(ok/n*100):null;
 const dashPercent=value=>value===null?"—":value+"%";
 const dashShort=name=>({"Indian Polity and Governance":"Polity","Modern Indian History":"History","Environment and Ecology":"Environment","Quantitative Aptitude":"Numeracy","Logical Reasoning":"Reasoning","Reading Comprehension":"Comprehension"}[name]||name);
-function dashMenuItem(){return `<button class="ui-menu-item swot-menu-item" data-dash-act="open" data-ui-menu="select"${DASH.open?' aria-current="page"':""}><span class="ui-menu-icon">${ic("heat")}</span><span class="ui-menu-copy"><strong>Dashboard</strong><small>Your SWOT, subject profile &amp; heatmap</small></span>${DASH.open?'<span class="ui-menu-current">Current</span>':UI_ARROW}</button>`;}
+function dashMenuItem(){return `<a class="ui-menu-item swot-menu-item" href="#/dashboard" data-route data-ui-menu="select"${DASH.open?' aria-current="page"':""}><span class="ui-menu-icon">${ic("heat")}</span><span class="ui-menu-copy"><strong>Dashboard</strong><small>Your SWOT, subject profile &amp; heatmap</small></span>${DASH.open?'<span class="ui-menu-current">Current</span>':UI_ARROW}</a>`;}
 function dashQuestions(scope=DASH.scope,source=DASH.source){
   const out=[];
   for(const p of S.packs){
@@ -2191,10 +2195,141 @@ document.addEventListener("click",event=>{
   if(act==="find-subject"||act==="band")document.getElementById("swot-heatmap")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth"});
   else if(["scope","mode","source"].includes(act))window.scrollTo(0,0);
 });
-
+/* ---------- Shareable pages and browser navigation ---------- */
+const SPACE_PATHS={static:"static",ca:"current-affairs",cse:"cse",csat:"csat",capf:"capf"};
+const PAGE_TOOLS={notebook:"Notebook",bookmarks:"Bookmarks",import:"Import",practice:"Practice",revision:"Daily revision",mistakes:"Mistake practice",search:"Search questions"};
+const ROUTES={started:false,applying:false,waiting:false,current:"",index:0,restoring:false,pending:null,scrolls:new Map()};
+function sectionHash(space,tool=""){
+  const page=tool==="marks"?"bookmarks":tool==="practice"?"":tool;
+  return "#/"+SPACE_PATHS[space]+(page?"/"+page:"");
+}
+function parsePageRoute(hash){
+  const parts=String(hash||"").toLowerCase().replace(/^#\//,"").replace(/\/+$/,"").split("/");
+  if(!String(hash||"").startsWith("#/")||parts.length>2)return null;
+  const spaceFor=path=>Object.keys(SPACE_PATHS).find(key=>SPACE_PATHS[key]===path||(key==="ca"&&path==="ca"));
+  if(parts[0]==="dashboard"){
+    const scope=parts[1]?spaceFor(parts[1]):"mixed";
+    return scope?{kind:"dashboard",scope,hash:"#/dashboard"+(scope==="mixed"?"":"/"+SPACE_PATHS[scope])}:null;
+  }
+  const space=spaceFor(parts[0]),tool=parts[1]||"";
+  if(!space||(tool&&!Object.hasOwn(PAGE_TOOLS,tool))||(tool==="search"&&!["cse","csat"].includes(space)))return null;
+  return {kind:"section",space,tool,hash:sectionHash(space)+(tool?"/"+tool:"")};
+}
+function authReturnUrl(){
+  // Leave Supabase's session/error fragments and PKCE callback parameters untouched.
+  return /(?:^#|&)(?:access_token|refresh_token|error|error_code|error_description|token_type)=/.test(location.hash||"")||new URLSearchParams(location.search||"").has("code");
+}
+function resetPracticeSpace(space){
+  DASH.open=false;flushInBackground();S.space=space;try{localStorage.setItem("rd_space",space);}catch(error){}
+  S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.sourceExam="";S.pyqSource={sourceExam:""};S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
+  S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();
+}
+function pageRouteFromState(){
+  if(DASH.open)return parsePageRoute("#/dashboard"+(DASH.scope==="mixed"?"":"/"+SPACE_PATHS[DASH.scope]));
+  let tool=S.tab==="marks"?"bookmarks":S.tab!=="practice"?S.tab:"";
+  if(S.tab==="practice")tool=S.quiz||S.view==="wiz"?"practice":({daily:"revision",smart:"mistakes",search:"search"}[S.view]||"");
+  return parsePageRoute(sectionHash(S.space)+(tool?"/"+tool:""));
+}
+function applyPageRoute(page){
+  ROUTES.applying=true;
+  try{
+    document.getElementById("ui-navigation-menu")?.close?.();
+    document.getElementById("swot-topic-dialog")?.close?.();
+    document.body.classList.remove("ui-menu-open","swot-topic-open");
+    S.confirmExit=false;S.confirmFin=false;S.quiz=null;S.mdText="";
+    if(page.kind==="dashboard"){
+      DASH.open=true;DASH.scope=page.scope;DASH.testSubject="";DASH.source="";DASH.band="all";DASH.query="";DASH.detail=null;DASH.showQuestions=false;
+      S.tab="practice";S.view="home";
+    }else{
+      if(S.space!==page.space)resetPracticeSpace(page.space);
+      DASH.open=false;S.tab=({notebook:"notebook",bookmarks:"marks",import:"import"}[page.tool]||"practice");
+      S.view=({practice:"wiz",revision:"daily",mistakes:"smart",search:"search"}[page.tool]||"home");
+      if(page.tool==="practice")S.step=1;
+      if(page.tool==="mistakes")S.smart={subject:"",subjects:new Set(),topics:new Set(),step:1,count:20,custom:15,mode:"practice",back:"practice"};
+      if(page.tool==="notebook")S.nb.subject=undefined;
+      try{localStorage.setItem("rd_space",page.space);}catch(error){}
+    }
+  }finally{ROUTES.applying=false;}
+}
+function pageHistoryState(scroll=0){
+  const existing=window.history?.state;
+  return {...(existing&&typeof existing==="object"?existing:{}),soloPage:{index:ROUTES.index,scroll}};
+}
+function writePageUrl(page,replace=false,scroll=0){
+  if(!window.history?.pushState)return;
+  if(!replace){
+    ROUTES.scrolls.set(ROUTES.index,window.scrollY||0);
+    window.history.replaceState(pageHistoryState(window.scrollY||0),"",location.href);
+    ROUTES.index++;
+  }
+  window.history[replace?"replaceState":"pushState"](pageHistoryState(scroll),"",(location.pathname||"/")+(location.search||"")+page.hash);
+}
+function routePageTitle(page){
+  if(!page)return;
+  document.title=page.kind==="dashboard"?"Dashboard"+(page.scope==="mixed"?"":" · "+SPACES[page.scope].label)+" · Solo Leveling":SPACES[page.space].label+(page.tool?" · "+PAGE_TOOLS[page.tool]:"")+" · Solo Leveling";
+}
+function syncPageRoute(){
+  if(!ROUTES.started||ROUTES.applying||ROUTES.restoring)return;
+  if(!S.ready||S.bankError||!["none","ok"].includes(S.auth)){ROUTES.waiting=true;return;}
+  if(authReturnUrl())return;
+  if(ROUTES.waiting||!ROUTES.current){
+    const page=parsePageRoute(location.hash)||parsePageRoute(ROUTES.current)||parsePageRoute("#/dashboard");
+    ROUTES.waiting=false;applyPageRoute(page);ROUTES.current=page.hash;writePageUrl(page,true);routePageTitle(page);return;
+  }
+  const page=pageRouteFromState();if(!page)return;
+  if(page.hash!==ROUTES.current){writePageUrl(page);ROUTES.current=page.hash;}
+  routePageTitle(page);
+}
+function goToRoute(page,fromHistory=false,scroll=0){
+  ROUTES.pending=null;
+  if(!fromHistory&&page.hash===ROUTES.current)return;
+  writePageUrl(page,fromHistory,scroll);ROUTES.current=page.hash;applyPageRoute(page);routePageTitle(page);
+  render();window.scrollTo(0,scroll);
+  const heading=app.querySelector?.("h1, h2");heading?.setAttribute("tabindex","-1");heading?.focus({preventScroll:true});
+}
+function requestPageRoute(page){
+  if(!page||page.hash===ROUTES.current)return;
+  if(S.quiz&&!S.quiz.done){ROUTES.pending=page;S.confirmExit=true;render();return;}
+  goToRoute(page);
+}
+function browserPageChanged(){
+  if(!ROUTES.started||authReturnUrl())return;
+  const page=parsePageRoute(location.hash)||parsePageRoute("#/dashboard");
+  if(ROUTES.restoring){if(page.hash===ROUTES.current)ROUTES.restoring=false;return;}
+  const marker=window.history?.state?.soloPage;
+  if(page.hash===ROUTES.current){
+    if(Number.isInteger(marker?.index))ROUTES.index=marker.index;
+    if(location.hash!==page.hash)writePageUrl(page,true);
+    return;
+  }
+  ROUTES.scrolls.set(ROUTES.index,window.scrollY||0);
+  if(S.quiz&&!S.quiz.done){
+    ROUTES.pending=page;S.confirmExit=true;ROUTES.restoring=true;
+    const delta=Number.isInteger(marker?.index)?ROUTES.index-marker.index:-1;
+    if(delta&&window.history?.go)window.history.go(delta);
+    else{writePageUrl(parsePageRoute(ROUTES.current),true);ROUTES.restoring=false;}
+    render();return;
+  }
+  ROUTES.index=Number.isInteger(marker?.index)?marker.index:ROUTES.index+1;
+  goToRoute(page,true,ROUTES.scrolls.get(ROUTES.index)??marker?.scroll??0);
+}
+function initRoutes(){
+  if(ROUTES.started)return;ROUTES.started=true;
+  ROUTES.index=Number.isInteger(window.history?.state?.soloPage?.index)?window.history.state.soloPage.index:0;
+  if(window.history&&"scrollRestoration" in window.history)window.history.scrollRestoration="manual";
+  window.addEventListener?.("popstate",browserPageChanged);
+  window.addEventListener?.("hashchange",browserPageChanged);
+  window.addEventListener?.("beforeunload",event=>{if(S.quiz&&!S.quiz.done){event.preventDefault();event.returnValue="";}});
+  if(authReturnUrl()){ROUTES.waiting=true;return;}
+  const page=parsePageRoute(location.hash)||parsePageRoute("#/dashboard");
+  applyPageRoute(page);ROUTES.current=page.hash;writePageUrl(page,true);routePageTitle(page);
+}
+const pageNavigationRender=render;
+render=function(){syncPageRoute();return pageNavigationRender();};
 
 render();
 (async function boot(){
+  initRoutes();
   if(LOCAL_PREVIEW){S.auth="none";await openBank(localBackend("recall-desk-preview-v1"),"browser");return;}
   if(CONFIG.requireLogin&&!(CONFIG.supabaseUrl&&CONFIG.supabaseKey)){S.auth="setup";S.ready=true;render();return;}
   if(CONFIG.supabaseUrl&&CONFIG.supabaseKey){
