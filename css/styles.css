@@ -1186,3 +1186,5 @@ body.swot-topic-open{overflow:hidden}
 /* Main sections and study tools are bookmarkable links. */
 .ui-menu-item,.ui-tabs .tab{text-decoration:none}
 .ui-menu-item:focus-visible,.ui-tabs .tab:focus-visible{outline:2px solid var(--gold);outline-offset:4px}
+
+.ui-mapping-link{min-height:78px}

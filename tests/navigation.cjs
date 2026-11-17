@@ -31,3 +31,33 @@ test('bad URLs recover to the dashboard without displaying arbitrary content',()
 test('history restores page scroll positions',()=>{const f=fixture('#/static');f.run(`initRoutes();window.scrollY=450;requestPageRoute(parsePageRoute('#/cse'));window.scrollY=150;`);f.history.go(-1);assert.equal(f.run('window.scrollY'),450);f.history.go(1);assert.equal(f.run('window.scrollY'),150);});
 test('a bad hash entered on the dashboard is normalised without adding history',()=>{const f=fixture();f.run('initRoutes();');f.location.hash='#/bad';f.emit('hashchange');assert.equal(f.location.hash,'#/dashboard');assert.equal(f.entries.length,1);});
 test('an alias entered on the active section is normalised to its shared address',()=>{const f=fixture('#/current-affairs');f.run('initRoutes();');f.location.hash='#/ca';f.emit('hashchange');assert.equal(f.location.hash,'#/current-affairs');assert.equal(f.run('S.space'),'ca');});
+
+test('Mapping is a standalone sidebar link, outside study routing',()=>{
+ const f=fixture('#/static');f.run('initRoutes();drawUiMenu();');
+ const menu=f.node('ui-navigation-menu').innerHTML;
+ assert.match(menu,/<a[^>]+href="\.\/mapping\/"[^>]+target="_blank"[^>]+rel="noopener"[^>]+data-open-mapping/);
+ assert.match(menu,/Explore India and World/);
+ assert.equal(f.run("parsePageRoute('#/mapping')"),null);
+});
+test('Mapping opens separately, focuses the existing window and preserves unfinished study state',()=>{
+ const f=fixture('#/static/practice');const opened=[];let focused=0;
+ const popup={closed:false,opener:{},location:{replace(url){opened.push(url);}},focus(){focused++;}};
+ f.context.window.open=(...args)=>{opened.push(args);return popup;};
+ f.run("initRoutes();S.quiz={done:false,ans:{q:'B'},marked:{q:true}};");
+ const before=f.run('JSON.stringify({quiz:S.quiz,packs:S.packs,prog:S.prog})'),history=f.entries.length;
+ const handler=f.events.click.find(fn=>fn.toString().includes('a[data-open-mapping]'));
+ const click=()=>{let prevented=false;handler({target:{closest:()=>({href:'https://example.test/study/mapping/'})},button:0,preventDefault(){prevented=true;}});return prevented;};
+ assert.equal(click(),true);assert.equal(popup.opener,null);assert.equal(click(),true);
+ assert.equal(opened.length,2);assert.equal(focused,2);assert.ok(opened[0][2].includes('popup'));
+ assert.equal(f.run('JSON.stringify({quiz:S.quiz,packs:S.packs,prog:S.prog})'),before);
+ assert.equal(f.entries.length,history);assert.equal(f.location.hash,'#/static/practice');
+ popup.closed=true;assert.equal(click(),true);assert.equal(opened.length,4);
+});
+test('blocked popups and modified clicks retain the ordinary Mapping link',()=>{
+ const f=fixture();let calls=0;f.context.window.open=()=>{calls++;return null;};
+ const handler=f.events.click.find(fn=>fn.toString().includes('a[data-open-mapping]'));
+ for(const extra of [{},{ctrlKey:true},{metaKey:true},{shiftKey:true},{button:1}]){
+  let prevented=false;handler({target:{closest:()=>({href:'https://example.test/mapping/'})},button:0,...extra,preventDefault(){prevented=true;}});assert.equal(prevented,false);
+ }
+ assert.equal(calls,1);
+});
