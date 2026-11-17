@@ -3,7 +3,7 @@ const source=fs.readFileSync(__dirname+'/../mapping/app.js','utf8'),data=JSON.pa
 function fixture(){
  const nodes=new Map(),writes=[],timers=new Map();let timerId=0;
  const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',innerHTML:'',checked:false,hidden:false,value:'',scrollTop:0,dataset:{},setAttribute(){},addEventListener(){},querySelector(){return null;}});return nodes.get(id);};
- const context=vm.createContext({console,Math,Date,JSON,Set,DOMPoint:class{},document:{getElementById:node,documentElement:{dataset:{}},querySelectorAll(){return [];},querySelector(){return node('close');},addEventListener(){}},localStorage:{getItem(){return '{}';},setItem(k,v){writes.push({k,v});}},setInterval(fn){timers.set(++timerId,fn);return timerId;},clearInterval(id){timers.delete(id);}});
+ const context=vm.createContext({console,Math,Date,JSON,Set,DOMPoint:class{constructor(x,y){this.x=x;this.y=y;}matrixTransform(){return {x:this.x,y:this.y};}},document:{getElementById:node,documentElement:{dataset:{}},querySelectorAll(){return [];},querySelector(){return node('close');},addEventListener(){}},localStorage:{getItem(){return '{}';},setItem(k,v){writes.push({k,v});}},setInterval(fn){timers.set(++timerId,fn);return timerId;},clearInterval(id){timers.delete(id);}});
  vm.runInContext(source.replace(/boot\(\);\s*$/,''),context);context.data=JSON.parse(JSON.stringify(data));const run=code=>vm.runInContext(code,context);run('state.rivers=data.rivers;state.places=data.places;state.states=data.states;state.land=data.land;state.worldLand=data.worldLand;state.worldPlaces=data.worldPlaces;state.cities=data.cities;');return {run,nodes,writes,timers,node};
 }
 test('expanded river geometries remain regional and uniquely identified',()=>{assert.ok(data.rivers.length>=47);assert.equal(new Set(data.rivers.map(r=>r.id)).size,data.rivers.length);for(const r of data.rivers){assert.ok(r.lines.length);assert.ok(r.source&&r.mouth&&r.note);for(const [lon,lat] of r.lines.flat()){assert.ok(lon>60&&lon<100,r.id);assert.ok(lat>7&&lat<40,r.id);}}});
@@ -36,7 +36,7 @@ test('regional highlights cover the Andes and available deserts, plateaus and bi
 test('ocean currents have directional paths, warm/cold types, and no dateline-spanning jumps',()=>{const currents=data.worldPlaces.filter(p=>p.group==='current');assert.equal(currents.length,29);for(const p of currents){assert.ok(['warm','cold'].includes(p.temperature),p.name);assert.ok(p.lines.length&&p.ocean,p.name);for(const l of p.lines)for(let i=1;i<l.length;i++)assert.ok(Math.abs(l[i][0]-l[i-1][0])<=180,p.name);}assert.equal(currents.find(p=>p.name==='Gulf Stream').temperature,'warm');assert.equal(currents.find(p=>p.name.startsWith('Humboldt')).temperature,'cold');const f=fixture();f.run("setScope('world');chooseWorldTopic('oceans')");assert.match(f.node('world-features').innerHTML,/current-line.*marker-end/);assert.ok(!f.run("activeItems().some(p=>p.group==='tectonic')"));});
 test('plate outlines have their own learning category and include Nazca',()=>{const f=fixture();f.run("setScope('world');chooseWorldTopic('plates','recall');");assert.equal(f.run('activeItems().length'),16);assert.ok(f.run("activeItems().every(p=>p.group==='tectonic'&&p.geometry)"));assert.ok(f.run("activeItems().some(p=>p.name==='Nazca Plate')"));f.run('startSession()');assert.ok(!f.node('world-features').innerHTML.includes('point-label'));});
 test('South America continent collection is isolated in browse and recall',()=>{const f=fixture();f.run("setScope('world');chooseWorldContinent('South America','recall')");assert.equal(f.run("activeItems().length"),83);assert.ok(f.run("activeItems().every(p=>p.region==='South America')"));assert.ok(f.run("activeItems().some(p=>p.name==='Amazon River')"));assert.ok(!f.run("activeItems().some(p=>p.name==='Gulf Stream')"));f.run("startSession()");assert.ok(f.run("state.session.ids.every(id=>river(id).region==='South America')"));});
-test('zoom thresholds hide names at overview scale and show them nearer without removing marks',()=>{const f=fixture();assert.equal(f.run("labelVisibleAt({group:'peak'},1036,'world')"),false);assert.equal(f.run("labelVisibleAt({group:'peak'},130,'world')"),true);assert.equal(f.run("labelVisibleAt({group:'range'},1000,'india')"),true);assert.equal(f.run("labelVisibleAt({group:'peak'},1036,'world',true)"),true);f.run("setScope('world');chooseWorldTopic('mountains');resetMap();");assert.match(f.node('world-features').innerHTML,/data-world-feature="sa-cotopaxi"/);assert.match(f.node('world-features').innerHTML,/data-label-max="800"/);});
+test('feature names use the continent context and marks remain at overview scale',()=>{const f=fixture();f.run("setScope('world');chooseWorldTopic('mountains');resetMap();");assert.match(f.node('world-features').innerHTML,/data-world-feature="sa-cotopaxi"/);assert.match(f.node('world-features').innerHTML,/data-label-context="continent:South America"/);});
 test('India river and state selections replace each other and ocean clearing removes every highlight',()=>{const f=fixture();f.run("chooseTopic('rivers');selectRiver('ganga');selectState('IN-MH')");assert.equal(f.run('state.selected'),null);assert.equal(f.run('state.detail'),false);assert.ok(!f.node('rivers').innerHTML.includes('river-feature active'));assert.match(f.node('selection-card').innerHTML,/Maharashtra/);assert.equal(f.node('map-status').innerHTML,'');f.run("selectRiver('yamuna')");assert.equal(f.run('state.stateSelected'),null);assert.ok(!f.node('states').innerHTML.includes('india-state active'));assert.match(f.node('selection-card').innerHTML,/Yamuna/);f.run('clearSelection()');assert.equal(f.run('state.selected'),null);assert.equal(f.run('state.stateSelected'),null);assert.equal(f.run('state.detail'),false);assert.equal(f.node('selection-card').innerHTML,'');assert.equal(f.node('map-status').innerHTML,'');assert.ok(!f.node('rivers').innerHTML.includes('river-feature active'));});
 test('India physical places also clear when replaced by a state',()=>{const f=fixture();f.run("chooseTopic('mountains');selectRiver(state.places[0].id);selectState('IN-MH')");assert.ok(!f.node('places').innerHTML.includes(' active'));assert.equal(f.run('state.selected'),null);f.run('clearSelection()');assert.equal(f.node('selection-card').innerHTML,'');});
 test('boundary visibility preserves selectable geography and stays independent between map scopes',()=>{const f=fixture();f.run("selectState('IN-MH');setBoundaryVisibility('states',false)");assert.equal(f.run('state.stateBorders'),false);assert.equal((f.node('states').innerHTML.match(/data-state=/g)||[]).length,36);assert.equal(f.run('state.stateSelected'),'IN-MH');f.run("setBoundaryVisibility('countries',true);setScope('world');setBoundaryVisibility('countries',false)");assert.equal(f.run('document.documentElement.dataset.countryBorders'),'false');assert.ok(f.node('land').innerHTML.includes('data-country="BRA"'));f.run("setScope('india')");assert.equal(f.run('document.documentElement.dataset.countryBorders'),'true');assert.equal(f.run('document.documentElement.dataset.stateBorders'),'false');assert.ok(f.node('symbol-legend').innerHTML.includes('State / UT boundaries'));const settings=JSON.parse(f.writes.at(-1).v).mapSettings;assert.equal(settings.stateBorders,false);assert.equal(settings.worldBorders,false);});
@@ -52,10 +52,14 @@ test('Quiz maps do not expose city overlays or city names before reveal',()=>{co
 test('capital search deduplicates countries already represented in the PDF collection',()=>{const f=fixture();assert.equal(f.run("globalSearch('world','Paramaribo').filter(r=>r.name==='Suriname').length"),1);assert.equal(f.run("globalSearch('world','Brazil').filter(r=>r.name==='Brazil').length"),1);});
 
 
-test('names are readable after modest zoom while overview marks remain available',()=>{
- const f=fixture();assert.equal(f.run("labelVisibleAt({group:'peak'},780,'world')"),true);
- assert.equal(f.run("labelVisibleAt({group:'current'},1036,'world')"),true);
- assert.equal(f.run("labelVisibleAt({group:'peak'},1000,'india')"),true);
+test('names start at a geography filling the viewport in portrait and landscape',()=>{
+ const f=fixture();f.run("setScope('world');");
+ assert.equal(f.run("geographyFillsView(labelContextBounds('continent:South America'),{w:1036,h:640})"),false);
+ assert.equal(f.run("geographyFillsView(labelContextBounds('continent:South America'),{w:450,h:220})"),true);
+ assert.equal(f.run("geographyFillsView(labelContextBounds('country:BRA'),{w:100,h:400})"),true);
+ assert.equal(f.run("geographyFillsView(labelContextBounds('country:BRA'),{w:600,h:500})"),false);
+ assert.equal(f.run("geographyFillsView({w:200,h:300},{w:500,h:300})"),true);
+ assert.equal(f.run("geographyFillsView({w:200,h:300},{w:200,h:900})"),true);
 });
 test('latitude toggle renders all three projected lines and survives saved settings',()=>{
  const f=fixture();f.run("state.latitudes=true;renderLatitudes();saveLocal();");
@@ -86,4 +90,26 @@ test('browser storage contains only edits, aggregated learning history and prefe
  assert.deepEqual(Object.keys(saved.history.ganga).sort(),['correct','last','review','seen']);
  assert.deepEqual(Object.keys(saved.mapSettings).sort(),['indiaCountryBorders','latitudes','sidebarWidth','stateBorders','worldBorders']);
  f.run('localStorage.getItem=()=>'+JSON.stringify(JSON.stringify(saved))+';state.history={};loadLocal();');assert.equal(f.run('state.history.ganga.correct'),1);
+});
+
+test('two-finger pinch scales around its midpoint and supports translation and limits',()=>{
+ const f=fixture();f.run("const pinch={view:{x:0,y:0,w:1000,h:800},anchor:[400,300],distance:100,mid:{clientX:400,clientY:300},scale:1};");
+ assert.equal(f.run("pinchedView(pinch,[{clientX:300,clientY:300},{clientX:500,clientY:300}]).w"),500);
+ assert.equal(f.run("pinchedView(pinch,[{clientX:300,clientY:300},{clientX:500,clientY:300}]).x"),200);
+ assert.equal(f.run("pinchedView(pinch,[{clientX:320,clientY:310},{clientX:520,clientY:310}]).x"),190);
+ assert.equal(f.run("pinchedView(pinch,[{clientX:0,clientY:0},{clientX:1,clientY:0}],'world').w"),1500);
+ assert.equal(f.run("pinchedView(pinch,[{clientX:0,clientY:0},{clientX:10000,clientY:0}],'world').w"),40);
+});
+test('pinch release continues as a pan without selecting or clearing a place',()=>{
+ const f=fixture();f.node('atlas').getScreenCTM=()=>({a:1,d:1,e:0,f:0,inverse(){return {};}});
+ f.run("selectState('IN-MH');const contact=(id,x,y)=>({pointerId:id,button:0,clientX:x,clientY:y,preventDefault(){},target:{closest(){return null;}}});mapPointerDown(contact(1,100,100));mapPointerDown(contact(2,200,100));mapPointerMove(contact(2,300,100));");
+ assert.equal(f.run('state.view.w'),500);
+ f.run('mapPointerEnd(contact(2,300,100));mapPointerMove(contact(1,120,110));mapPointerEnd(contact(1,120,110));');
+ assert.equal(f.run('state.stateSelected'),'IN-MH');assert.equal(f.run('mapPointers.size'),0);assert.equal(f.run('state.drag'),null);
+});
+test('cancelled contacts and drags returning to their origin never act as ocean taps',()=>{
+ const f=fixture();f.node('atlas').getScreenCTM=()=>({a:1,d:1,e:0,f:0,inverse(){return {};}});
+ f.run("selectState('IN-MH');const contact=(id,x,y)=>({pointerId:id,button:0,clientX:x,clientY:y,preventDefault(){},target:{closest(){return null;}}});mapPointerDown(contact(1,100,100));mapPointerMove(contact(1,140,100));mapPointerMove(contact(1,100,100));mapPointerEnd(contact(1,100,100));");
+ assert.equal(f.run('state.stateSelected'),'IN-MH');f.run('mapPointerDown(contact(2,100,100));mapPointerEnd(contact(2,100,100),true);');assert.equal(f.run('state.stateSelected'),'IN-MH');
+ f.run('mapPointerDown(contact(3,100,100));mapPointerEnd(contact(3,100,100));');assert.equal(f.run('state.stateSelected'),null);
 });

@@ -82,11 +82,8 @@
 .selection-card .selection-cities{flex-wrap:wrap;max-height:64px;overflow:auto;white-space:normal}
 .city-dot{fill:#c9bfdc;stroke:var(--world-land);stroke-width:1}.city-feature{cursor:pointer;outline:none}.city-feature.active .city-dot,.city-feature:hover .city-dot,.city-feature:focus-visible .city-dot,.world-feature.city.active .city-dot{fill:var(--gold);stroke:var(--ink);stroke-width:1.3}.city-feature.active .point-label{fill:var(--gold)}.selection-cities{display:flex;align-items:center;gap:5px;overflow-x:auto;max-width:100%;margin-top:6px;padding-bottom:2px;white-space:nowrap;scrollbar-width:thin}.selection-cities small{color:var(--muted);font-size:9px;flex:none}.selection-card .selection-cities button{position:static;padding:3px 6px;font-size:10px;border:1px solid var(--line);border-radius:5px;color:var(--ink);white-space:nowrap;flex:none}.selection-card .selection-cities button:hover{color:var(--gold);border-color:var(--gold)}.map-search-results{padding:0 3px 13px}.search-result-count{font-size:10px;color:var(--muted);margin:13px 0 8px}.search-result{display:block;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:5px;background:transparent;padding:11px 9px;text-align:left}.search-result:hover,.search-result:focus-visible{background:var(--card)}.search-result strong{display:block;font-size:14px;font-weight:500}.search-result small{display:block;font-size:11px;color:var(--muted);line-height:1.4;margin-top:4px}#sidebar-content>.map-search-results{padding-inline:17px}.selection-cities small{letter-spacing:0;text-transform:none;margin:0}
 
-/* Compact floating navigation: the surface fades while all controls stay available. */
+/* Compact, permanently transparent navigation. */
 :root[data-map-scope] .site-header{position:fixed;inset:0 0 auto;height:44px;padding:0 18px;gap:12px;z-index:20;background:transparent;border:0;isolation:isolate}
-.site-header::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--bg);border-bottom:1px solid var(--line);opacity:0;animation:header-surface 2.8s ease forwards;transition:opacity .35s}
-.site-header:hover::before,.site-header:focus-within::before{opacity:.97!important}
-@keyframes header-surface{0%,60%{opacity:.97}100%{opacity:0}}
 :root[data-map-scope] .workspace{height:100dvh}
 :root[data-map-scope] .sidebar-title{padding-top:55px}
 :root[data-map-scope] .map-tools{top:56px}
@@ -98,5 +95,7 @@
 .key-symbol.capital{color:#ff9580!important}.key-symbol.city{color:#c9bfdc!important}
 .key-info{margin-top:10px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);padding:6px 8px;font:11px var(--f)}
 .latitude-guide path{stroke:#c2cfc8;stroke-opacity:.7}
-@media(prefers-reduced-motion:reduce){.site-header::before{animation:none}}
+
 @media(max-width:640px){:root[data-map-scope] .site-header{padding:0 10px}.site-header .header-middle{display:none}.site-header .header-actions{gap:5px}}
+
+#atlas{overscroll-behavior:contain;-webkit-touch-callout:none}
