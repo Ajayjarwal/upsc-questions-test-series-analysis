@@ -39,25 +39,16 @@ test('Mapping is a standalone sidebar link, outside study routing',()=>{
  assert.match(menu,/Explore India and World/);
  assert.equal(f.run("parsePageRoute('#/mapping')"),null);
 });
-test('Mapping opens separately, focuses the existing window and preserves unfinished study state',()=>{
- const f=fixture('#/static/practice');const opened=[];let focused=0;
- const popup={closed:false,opener:{},location:{replace(url){opened.push(url);}},focus(){focused++;}};
- f.context.window.open=(...args)=>{opened.push(args);return popup;};
- f.run("initRoutes();S.quiz={done:false,ans:{q:'B'},marked:{q:true}};");
+test('Mapping uses a normal new-tab link and preserves an unfinished study session',()=>{
+ const f=fixture('#/static/practice');f.run("initRoutes();S.quiz={done:false,ans:{q:'B'},marked:{q:true}};");
  const before=f.run('JSON.stringify({quiz:S.quiz,packs:S.packs,prog:S.prog})'),history=f.entries.length;
  const handler=f.events.click.find(fn=>fn.toString().includes('a[data-open-mapping]'));
- const click=()=>{let prevented=false;handler({target:{closest:()=>({href:'https://example.test/study/mapping/'})},button:0,preventDefault(){prevented=true;}});return prevented;};
- assert.equal(click(),true);assert.equal(popup.opener,null);assert.equal(click(),true);
- assert.equal(opened.length,2);assert.equal(focused,2);assert.ok(opened[0][2].includes('popup'));
+ f.context.window.open=()=>{throw Error('Mapping must use the native new-tab link');};
+ for(const modifiers of [{},{ctrlKey:true},{metaKey:true},{shiftKey:true},{button:1}]){
+  let prevented=false;handler({target:{closest:()=>({href:'https://example.test/mapping/'})},button:0,...modifiers,preventDefault(){prevented=true;}});assert.equal(prevented,false);
+ }
+ assert.match(f.run('mappingMenuItem()'),/target="_blank" rel="noopener"/);
+ assert.match(f.run('mappingMenuItem()'),/opens in a new tab/);
  assert.equal(f.run('JSON.stringify({quiz:S.quiz,packs:S.packs,prog:S.prog})'),before);
  assert.equal(f.entries.length,history);assert.equal(f.location.hash,'#/static/practice');
- popup.closed=true;assert.equal(click(),true);assert.equal(opened.length,4);
-});
-test('blocked popups and modified clicks retain the ordinary Mapping link',()=>{
- const f=fixture();let calls=0;f.context.window.open=()=>{calls++;return null;};
- const handler=f.events.click.find(fn=>fn.toString().includes('a[data-open-mapping]'));
- for(const extra of [{},{ctrlKey:true},{metaKey:true},{shiftKey:true},{button:1}]){
-  let prevented=false;handler({target:{closest:()=>({href:'https://example.test/mapping/'})},button:0,...extra,preventDefault(){prevented=true;}});assert.equal(prevented,false);
- }
- assert.equal(calls,1);
 });

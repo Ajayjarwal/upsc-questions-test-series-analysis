@@ -769,28 +769,11 @@ function drawUiMenu(){
     return '<a class="ui-menu-item" href="'+sectionHash(key)+'" data-v="'+key+'" data-route data-ui-menu="select"'+(active?' aria-current="page"':'')+'><span class="ui-menu-icon">'+ic(info.icon)+'</span><span class="ui-menu-copy"><strong>'+esc(space.label)+'</strong><small>'+esc(info.description)+'</small></span>'+(active?'<span class="ui-menu-current">Current</span>':'<svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>')+'</a>';
   }).join("")+'</nav><div class="ui-menu-footer">'+storageStatus()+'</div>';
 }
-// Mapping runs in its own window so opening it never leaves an unfinished quiz.
-let mappingWindow=null;
 function mappingMenuItem(){
-  return '<a class="ui-menu-item ui-mapping-link" href="./mapping/" target="_blank" rel="noopener" data-open-mapping aria-label="Mapping, opens in a new window"><span class="ui-menu-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6ZM9 3v15M15 6v15"/></svg></span><span class="ui-menu-copy"><strong>Mapping</strong><small>Explore India and World</small></span><svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7M21 3 11 13M10 3H3v18h18v-7"/></svg></a>';
-}
-function openMappingWindow(url){
-  try{
-    if(mappingWindow&&!mappingWindow.closed){mappingWindow.focus();return true;}
-    const popup=window.open('', '_blank', 'popup,width=1440,height=900,resizable=yes,scrollbars=yes');
-    if(!popup)return false;
-    // Remove the opener before loading the atlas; retain a reference for repeat clicks.
-    popup.opener=null;
-    popup.location.replace(url);
-    mappingWindow=popup;popup.focus();return true;
-  }catch{return false;}
+  return '<a class="ui-menu-item ui-mapping-link" href="./mapping/" target="_blank" rel="noopener" data-open-mapping aria-label="Mapping, opens in a new tab"><span class="ui-menu-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6ZM9 3v15M15 6v15"/></svg></span><span class="ui-menu-copy"><strong>Mapping</strong><small>Explore India and World</small></span><svg class="ic ui-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7M21 3 11 13M10 3H3v18h18v-7"/></svg></a>';
 }
 document.addEventListener("click",event=>{
-  const link=event.target.closest("a[data-open-mapping]");
-  if(!link||event.defaultPrevented||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
-  if(openMappingWindow(link.href))event.preventDefault();
-  // A blocked popup leaves the ordinary new-tab link available as a fallback.
-  document.getElementById("ui-navigation-menu")?.close();
+  if(event.target.closest("a[data-open-mapping]"))document.getElementById("ui-navigation-menu")?.close();
 });
 function ensureUiMenu(){
   let dialog=document.getElementById("ui-navigation-menu");
