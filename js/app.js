@@ -139,6 +139,15 @@ function enqueue(fn){
 }
 
 /* ---------- data model ---------- */
+function canonicalSubject(value){
+  const subject=String(value??"");
+  return /^(?:indian\s+)?polity\s+and\s+governance$/i.test(subject.trim())?"Polity and Governance":subject;
+}
+function canonicalQuestion(question){
+  const subject=canonicalSubject(question.subject);
+  return subject===question.subject?question:{...question,subject};
+}
+function canonicalPack(pack){return {...pack,questions:pack.questions.map(canonicalQuestion)};}
 function packSpace(id){
   return Object.keys(SPACES).find(k=>SPACES[k].prefix&&String(id).startsWith(SPACES[k].prefix))||"static";
 }
@@ -177,7 +186,7 @@ function monthBlock(o){
 function rebuild(){
   S.qs=[];S.byUid=new Map();
   for(const p of S.packs){if(!inSpace(p.id))continue;for(const q of p.questions){
-    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:q.subject,topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",source_exam:questionSourceExam(q),mo:q.mo||(p.ts?mKey(p.ts):"")};
+    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:canonicalSubject(q.subject),topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",source_exam:questionSourceExam(q),mo:q.mo||(p.ts?mKey(p.ts):"")};
     S.qs.push(x);S.byUid.set(x.uid,x);
   }}
 }
@@ -336,7 +345,7 @@ function parseImport(text){
     if(!r||typeof r!=="object"){errors.push(lab+": not an object");return;}
     const sourceExam=normalizeSourceExam([r.source_exam,r.exam,paper.source_exam,paper.exam,meta.source_exam,meta.exam,mm.source_exam,mm.exam].find(value=>value!==undefined&&value!==null&&!(typeof value==="string"&&!value.trim())));
     if(sourceExam===null&&S.space==="csat"){errors.push(lab+': source_exam must be "CSE" or "CAPF"');return;}
-    const subject=String(r.subject||topSubject).trim();
+    const subject=canonicalSubject(String(r.subject||topSubject).trim());
     if(!subject){errors.push(lab+": no subject");return;}
     const text=String(r.question||r.q||"").trim();
     if(!text){errors.push(lab+": no question text");return;}
@@ -1178,7 +1187,7 @@ function moveStep2(q,sj){
 }
 async function doMove(uid,sj,tp){
   const q=S.byUid.get(uid);if(!q)return;
-  sj=String(sj||"").trim().replace(/\s+/g," ");tp=String(tp||"").trim().replace(/\s+/g," ");
+  sj=canonicalSubject(String(sj||"").trim().replace(/\s+/g," "));tp=String(tp||"").trim().replace(/\s+/g," ");
   if(!sj||!tp){toast("Enter a sub-topic");return;}
   const subs=[...new Set(S.qs.map(x=>x.subject))];sj=subs.find(x=>x.toLowerCase()===sj.toLowerCase())||sj;
   const tps=[...new Set(S.qs.filter(x=>x.subject===sj).map(x=>x.topic))];tp=tps.find(x=>x.toLowerCase()===tp.toLowerCase())||tp;
@@ -1450,7 +1459,7 @@ function resetData(){resetTestHistory();S.store=null;S.storage="browser";S.packs
 /* ---------- backup ---------- */
 function buildBackup(){
   const progress={};for(const p of S.packs)progress[p.id]=itemsFor(p.id);
-  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions})),progress,test_history:readTestHistory()});
+  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions.map(canonicalQuestion)})),progress,test_history:readTestHistory()});
 }
 function buildAnalysis(){
   const cell=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
@@ -1461,7 +1470,7 @@ function buildAnalysis(){
     for(const q of pk.questions){
       const p=S.prog[pk.id+":"+q.no];if(!p||!(p.a||p.sk||p.b))continue;
       const st=p.a?(p.l==="c"?"correct":"wrong"):p.sk?"skipped":"new";
-      rows.push([sp,pk.title,q.no,q.subject,q.topic,st,p.a||0,p.w||0,p.sk||0,p.c||0,CONF[p.cf]||"",WHY[p.wy]||"",p.tm||"",p.tn?Math.round((p.ts||0)/p.tn):"",p.sl?1:0,p.bx||"",p.a?dueDay(p):"",p.t?dayKey(p.t):"",p.b?1:0,p.m?1:0,p.first?(p.first.skipped?"skipped":p.first.ok?"correct":"wrong"):"unknown",p.first?.pick||"",p.repeat?.a||0,p.repeat?.c||0,p.repeat?.sk||0].map(cell).join(","));
+      rows.push([sp,pk.title,q.no,canonicalSubject(q.subject),q.topic,st,p.a||0,p.w||0,p.sk||0,p.c||0,CONF[p.cf]||"",WHY[p.wy]||"",p.tm||"",p.tn?Math.round((p.ts||0)/p.tn):"",p.sl?1:0,p.bx||"",p.a?dueDay(p):"",p.t?dayKey(p.t):"",p.b?1:0,p.m?1:0,p.first?(p.first.skipped?"skipped":p.first.ok?"correct":"wrong"):"unknown",p.first?.pick||"",p.repeat?.a||0,p.repeat?.c||0,p.repeat?.sk||0].map(cell).join(","));
     }
   }
   return "# recall-desk progress export "+new Date().toISOString().slice(0,10)+" (sureness = how sure you were on the last answer; why_missed = your tag for the last wrong answer)\n"+rows.join("\n");
@@ -1476,7 +1485,7 @@ function parseBackup(text){
   for(const p of d.packs){
     if(!p||!p.id||!Array.isArray(p.questions))continue;
     const qs=p.questions.filter(q=>q&&Number.isInteger(q.no)&&q.text&&q.options&&acceptedAnswers(q).length&&acceptedAnswers(q).every(L=>q.options[L]));
-    if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs});
+    if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs.map(canonicalQuestion)});
   }
   if(!packs.length)return {error:"No question sets were found in this backup."};
   return {packs,progress:d.progress&&typeof d.progress==="object"?d.progress:{},testHistory:normalizeTestHistory(d.test_history),exported:d.exported||""};
@@ -1826,7 +1835,7 @@ function loadScript(src){return new Promise((res,rej)=>{const s=document.createE
 async function openBank(store,mode){
   S.store=null;S.storage=mode;S.ready=false;S.bankError="";S.bankRetry={store,mode};render();
   try{
-    const d=await store.load();S.packs=d.packs;rebuild();applyProg(d.prog);
+    const d=await store.load();S.packs=d.packs.map(canonicalPack);rebuild();applyProg(d.prog);
     S.store=store;S.ready=true;S.bankRetry=null;
     const quotesReady=loadStoredQuotes(store,mode),testsReady=loadTestHistory(store,mode);render();await Promise.all([quotesReady,testsReady]);
   }catch(e){
@@ -1864,7 +1873,7 @@ const DASH_MIN=5;
 const dashModeName=()=>({first:"First attempt",latest:"Latest answer",repeat:"Repeat practice"}[DASH.mode]);
 const dashPc=(ok,n)=>n?Math.round(ok/n*100):null;
 const dashPercent=value=>value===null?"—":value+"%";
-const dashShort=name=>({"Indian Polity and Governance":"Polity","Modern Indian History":"History","Environment and Ecology":"Environment","Quantitative Aptitude":"Numeracy","Logical Reasoning":"Reasoning","Reading Comprehension":"Comprehension"}[name]||name);
+const dashShort=name=>({"Polity and Governance":"Polity","Modern Indian History":"History","Environment and Ecology":"Environment","Quantitative Aptitude":"Numeracy","Logical Reasoning":"Reasoning","Reading Comprehension":"Comprehension"}[canonicalSubject(name)]||canonicalSubject(name));
 function dashMenuItem(){return `<a class="ui-menu-item swot-menu-item" href="#/dashboard" data-route data-ui-menu="select"${DASH.open?' aria-current="page"':""}><span class="ui-menu-icon">${ic("heat")}</span><span class="ui-menu-copy"><strong>Dashboard</strong><small>Your SWOT, subject profile &amp; heatmap</small></span>${DASH.open?'<span class="ui-menu-current">Current</span>':UI_ARROW}</a>`;}
 function dashQuestions(scope=DASH.scope,source=DASH.source){
   const out=[];
@@ -1872,7 +1881,7 @@ function dashQuestions(scope=DASH.scope,source=DASH.source){
     const space=packSpace(p.id);if(scope!=="mixed"&&space!==scope)continue;
     for(const q of p.questions){
       if(scope==="csat"&&source&&(source==="untagged"?!!questionSourceExam(q):questionSourceExam(q)!==source))continue;
-      out.push({...q,uid:p.id+":"+q.no,packId:p.id,space,src:q.src||[],qimg:q.qimg||[],simg:q.simg||[],exp:q.exp||"",sum:q.sum||"",year:q.year||"",source_exam:questionSourceExam(q)});
+      out.push({...q,subject:canonicalSubject(q.subject),uid:p.id+":"+q.no,packId:p.id,space,src:q.src||[],qimg:q.qimg||[],simg:q.simg||[],exp:q.exp||"",sum:q.sum||"",year:q.year||"",source_exam:questionSourceExam(q)});
     }
   }
   return out;
@@ -2065,10 +2074,21 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 
 function testSubjects(qs,results){
   const groups=new Map();
-  qs.forEach((q,i)=>{if(!q?.subject||!results[i]||results[i].deferred)return;const name=q.subject;if(!groups.has(name))groups.set(name,{total:0,correct:0,incorrect:0,skipped:0});const a=groups.get(name),r=results[i];a.total++;if(r.skipped)a.skipped++;else if(r.ok)a.correct++;else a.incorrect++;});
+  qs.forEach((q,i)=>{if(!q?.subject||!results[i]||results[i].deferred)return;const name=canonicalSubject(q.subject);if(!groups.has(name))groups.set(name,{total:0,correct:0,incorrect:0,skipped:0});const a=groups.get(name),r=results[i];a.total++;if(r.skipped)a.skipped++;else if(r.ok)a.correct++;else a.incorrect++;});
   return Object.fromEntries([...groups].map(([name,a])=>[name,{...a,marks:testMarks(a.correct,a.incorrect),maxMarks:a.total*2}]));
 }
 function validTestSubject(a,total){return a&&Number.isInteger(a.total)&&a.total>0&&a.total<=total&&[a.correct,a.incorrect,a.skipped].every(n=>Number.isInteger(n)&&n>=0)&&a.correct+a.incorrect+a.skipped===a.total&&a.marks===testMarks(a.correct,a.incorrect)&&a.maxMarks===a.total*2;}
+function canonicalSubjectBreakdown(parts,total){
+  if(!parts||typeof parts!=="object"||Array.isArray(parts))return undefined;
+  const merged=new Map();
+  for(const [label,value] of Object.entries(parts)){
+    const name=canonicalSubject(label);if(!name||!validTestSubject(value,total))return undefined;
+    if(!merged.has(name))merged.set(name,{total:0,correct:0,incorrect:0,skipped:0});
+    const group=merged.get(name);for(const key of ["total","correct","incorrect","skipped"])group[key]+=value[key];
+  }
+  const groups=[...merged].map(([name,a])=>[name,{...a,marks:testMarks(a.correct,a.incorrect),maxMarks:a.total*2}]);
+  return groups.length&&groups.every(([,a])=>validTestSubject(a,total))?Object.fromEntries(groups):undefined;
+}
 function savedStaticTests(){
   const rows=[];
   for(const pack of S.packs){
@@ -2089,7 +2109,7 @@ function savedStaticTests(){
 }
 function progressHistory(){
   const saved=readTestHistory();
-  const recorded=saved.filter(row=>(DASH.scope==="mixed"||row.space===DASH.scope)&&(DASH.scope!=="csat"||!DASH.source||(DASH.source==="untagged"?!row.sourceExam:row.sourceExam===DASH.source)));
+  const recorded=saved.filter(row=>(DASH.scope==="mixed"||row.space===DASH.scope)&&(DASH.scope!=="csat"||!DASH.source||(DASH.source==="untagged"?!row.sourceExam:row.sourceExam===DASH.source))).map(row=>({...row,bySubject:canonicalSubjectBreakdown(row.bySubject,row.total)}));
   const papers=["static","mixed"].includes(DASH.scope)?savedStaticTests():[],recordedCount=recorded.filter(row=>row.total===DASH.testLength).length,savedCount=papers.filter(row=>row.total===DASH.testLength).length;
   const view=DASH.testView==="auto"?(recordedCount?"attempts":"saved"):DASH.testView,scopeRows=view==="saved"?papers:recorded;
   const subjects=[...new Set([...dashQuestions().map(q=>q.subject),...[...papers,...recorded].flatMap(row=>Object.keys(row.bySubject||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b));
