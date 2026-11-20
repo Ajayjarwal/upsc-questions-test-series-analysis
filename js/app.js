@@ -143,6 +143,33 @@ function canonicalSubject(value){
   const subject=String(value??"");
   return /^(?:indian\s+)?polity\s+and\s+governance$/i.test(subject.trim())?"Polity and Governance":subject;
 }
+// Current Affairs uses the agreed CSE-based Polity taxonomy. Stored questions
+// and progress identities remain intact; other study spaces keep their topics.
+const CA_POLITY_GROUPS={
+  "Basic Structure":[],
+  "Centre-State Relations":["Federalism and Mineral Taxation"],
+  "Citizenship":[],
+  "Constitutional Amendments":["Cooperatives and Constitutional Provisions"],
+  "Constitutional Bodies":[],
+  "Directive Principles of State Policy":["Education and Examination Governance","Education and Literacy","Government Schemes & Policies","Health and Nutrition","Health Laws & Regulations","Labour Laws and Industrial Relations","Political Philosophy and Social Justice","Uniform Civil Code"],
+  "Federalism":["State Executive","State Legislature"],
+  "Fundamental Duties":[],
+  "Fundamental Rights":["Fundamental Rights and Preventive Detention","Fundamental Rights and Public Order","Digital Governance and Social Media Regulation","Right to Information and Public Accountability"],
+  "Inter-State Relations":["Inter-State Relations and Zonal Councils","Federalism and Water Disputes"],
+  "Judiciary":["Alternative Dispute Resolution and Lok Adalats","High Courts and Jurisdiction","Supreme Court and Judicial Institutions","Tribunals and Judicial Reforms"],
+  "Miscellaneous":["Maritime Laws & Regulations","Sports Awards and Governance","Sports Governance and Anti-Doping"],
+  "Non-Constitutional Bodies":["Narcotics Regulation and Institutions","Statutory Bodies and Ministries"],
+  "Panchayati Raj & Municipalities":["Panchayati Raj and Devolution","Local Government and Gram Sabha"],
+  "Parliament":["Civil Registration and Legislative Powers"],
+  "Salient Features of the Constitution":["Comparative Constitutional Systems","Historical Background","Preamble"],
+  "Scheduled Areas and Tribal Areas":["Local Government and Autonomous Councils","Tribal Welfare and Education"],
+  "Special Provisions":["Emergency Provisions"],
+  "Union and its Territory":["Territorial Changes and Constitutional Law"],
+  "Union Executive":["Cabinet Committees and Civil Services","Defence Organisation and Technology","Defence Procurement"]
+};
+const CA_POLITY_ALIASES=new Map(Object.entries(CA_POLITY_GROUPS).flatMap(([topic,aliases])=>[topic,...aliases].map(alias=>[alias,topic])));
+function isCaPolity(subject,space=S.space){return space==="ca"&&canonicalSubject(subject)==="Polity and Governance";}
+function questionTopic(q,space){return isCaPolity(q.subject,space)?CA_POLITY_ALIASES.get(q.topic)||q.topic:q.topic;}
 function canonicalQuestion(question){
   const subject=canonicalSubject(question.subject);
   return subject===question.subject?question:{...question,subject};
@@ -186,7 +213,7 @@ function monthBlock(o){
 function rebuild(){
   S.qs=[];S.byUid=new Map();
   for(const p of S.packs){if(!inSpace(p.id))continue;for(const q of p.questions){
-    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:canonicalSubject(q.subject),topic:q.topic,text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",source_exam:questionSourceExam(q),mo:q.mo||(p.ts?mKey(p.ts):"")};
+    const x={uid:p.id+":"+q.no,packId:p.id,no:q.no,subject:canonicalSubject(q.subject),topic:questionTopic(q,packSpace(p.id)),text:q.text,options:q.options,answer:q.answer,exp:q.exp||"",sum:q.sum||"",simg:q.simg||[],qimg:q.qimg||[],src:q.src||[],year:q.year||"",source_exam:questionSourceExam(q),mo:q.mo||(p.ts?mKey(p.ts):"")};
     S.qs.push(x);S.byUid.set(x.uid,x);
   }}
 }
@@ -923,10 +950,13 @@ function viewHome(){
 
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
-    const entries=[...g.get(sub)],ks=entries.map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
+    const entries=[...g.get(sub)];
+    if(S.view!=="smart"&&isCaPolity(sub))for(const topic of Object.keys(CA_POLITY_GROUPS))if(!g.get(sub).has(topic))entries.push([topic,[]]);
+    if(isCaPolity(sub))entries.sort(([a],[b])=>a.localeCompare(b));
+    const ks=entries.filter(([,list])=>list.length).map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
     return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="topic-grid">${entries.map(([t,list])=>{
       const k=topicKey(sub,t),on=o.topics.has(k);
-      return `<button class="topic-card" aria-pressed="${on}" data-act="topic" data-v="${esc(k)}"><span class="topic-info"><span class="topic-name">${esc(t)}</span><span class="topic-count">${list.length} question${list.length===1?"":"s"}</span></span><span class="chk" aria-hidden="true">${on?ic("check"):""}</span></button>`;
+      return `<button class="topic-card" ${list.length?"":"disabled"} aria-pressed="${on}" data-act="topic" data-v="${esc(k)}"><span class="topic-info"><span class="topic-name">${esc(t)}</span><span class="topic-count">${list.length} question${list.length===1?"":"s"}</span></span><span class="chk" aria-hidden="true">${on?ic("check"):""}</span></button>`;
     }).join("")}</div></div>`;
   }).join("");
 }
@@ -1180,7 +1210,7 @@ function moveStep1(q){
   <div class="row"><button class="btn sm" data-act="movecancel">Cancel</button></div>`;
 }
 function moveStep2(q,sj){
-  const tops=[...new Set(S.qs.filter(x=>x.subject===sj).map(x=>x.topic))].sort();
+  const tops=[...new Set([...S.qs.filter(x=>x.subject===sj).map(x=>x.topic),...(isCaPolity(sj)?Object.keys(CA_POLITY_GROUPS):[])])].sort();
   return `<span class="label">Step 2 \u00b7 Sub-topic in <b>${esc(sj)}</b></span>${tops.length?`<div class="chips">${tops.map(x=>`<button class="pbtn" aria-pressed="${sj===q.subject&&x===q.topic}" data-act="mvgo" data-s="${esc(sj)}" data-v="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:`<p class="hint">No sub-topics yet in this subject. Type a new one.</p>`}
   <span class="label">Or type a new sub-topic</span><div class="row"><input class="delin mvnew" type="text" maxlength="80" placeholder="New sub-topic" aria-label="New sub-topic"><button class="btn sm pri" data-act="mvgonew" data-s="${esc(sj)}">Move here</button></div>
   <div class="row"><button class="btn sm" data-act="mvback">Back</button><button class="btn sm" data-act="movecancel">Cancel</button></div>`;
@@ -1881,7 +1911,7 @@ function dashQuestions(scope=DASH.scope,source=DASH.source){
     const space=packSpace(p.id);if(scope!=="mixed"&&space!==scope)continue;
     for(const q of p.questions){
       if(scope==="csat"&&source&&(source==="untagged"?!!questionSourceExam(q):questionSourceExam(q)!==source))continue;
-      out.push({...q,subject:canonicalSubject(q.subject),uid:p.id+":"+q.no,packId:p.id,space,src:q.src||[],qimg:q.qimg||[],simg:q.simg||[],exp:q.exp||"",sum:q.sum||"",year:q.year||"",source_exam:questionSourceExam(q)});
+      out.push({...q,subject:canonicalSubject(q.subject),topic:questionTopic(q,space),uid:p.id+":"+q.no,packId:p.id,space,src:q.src||[],qimg:q.qimg||[],simg:q.simg||[],exp:q.exp||"",sum:q.sum||"",year:q.year||"",source_exam:questionSourceExam(q)});
     }
   }
   return out;
