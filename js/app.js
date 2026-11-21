@@ -167,9 +167,246 @@ const CA_POLITY_GROUPS={
   "Union and its Territory":["Territorial Changes and Constitutional Law"],
   "Union Executive":["Cabinet Committees and Civil Services","Defence Organisation and Technology","Defence Procurement"]
 };
-const CA_POLITY_ALIASES=new Map(Object.entries(CA_POLITY_GROUPS).flatMap(([topic,aliases])=>[topic,...aliases].map(alias=>[alias,topic])));
+const CA_SUBJECT_GROUPS={"Polity and Governance":CA_POLITY_GROUPS,...{
+  "Economy": {
+    "Banking": [
+      "Banking and Financial Regulation",
+      "Banking and NBFC Regulation",
+      "Banking Fraud and Financial Technology",
+      "Banking Laws and Digital Records",
+      "Digital Payments and Financial Connectivity",
+      "Digital Payments and Financial Infrastructure"
+    ],
+    "Economic Growth and Development": [
+      "Business Environment and Global Reports",
+      "International Economic Classifications",
+      "Urbanisation and Economic Development"
+    ],
+    "Economic Reforms and Planning": [
+      "Business Regulation and Decriminalisation",
+      "Public Sector Enterprises and Leadership"
+    ],
+    "Energy": [
+      "Oil and Gas Exploration",
+      "Renewable Energy and Power Capacity",
+      "Renewable Energy Schemes"
+    ],
+    "Financial Markets": [
+      "Bonds and Infrastructure Finance",
+      "Social Finance and Capital Markets"
+    ],
+    "Fiscal Policy": [
+      "Fertilizer Policy and Distribution",
+      "Fertilizer Policy and Subsidies",
+      "Finance Commission and Fiscal Federalism",
+      "Public Procurement and Digital Platforms",
+      "Taxation and Voluntary Disclosure",
+      "Taxation and Windfall Profits"
+    ],
+    "Inclusive Growth": [
+      "Agriculture and Women Farmers",
+      "Government Schemes & Policies",
+      "Labour and Social Security",
+      "Women and Rural Livelihoods"
+    ],
+    "Industry": [
+      "Cooperatives and Rural Industries",
+      "Electric Vehicles and Industrial Policy",
+      "Industry and Manufacturing",
+      "Investment and Industrial Policy",
+      "Mining Laws and Mineral Taxation",
+      "MSME Classification and Policy",
+      "MSMEs and Payment Regulation",
+      "MSMEs and Sustainable Manufacturing"
+    ],
+    "Inflation": [],
+    "Infrastructure": [
+      "Infrastructure and Logistics",
+      "Infrastructure Monitoring"
+    ],
+    "International Economics & Balance of Payments": [
+      "Foreign Investment and E-commerce",
+      "International Trade and WTO"
+    ],
+    "Microeconomics": [],
+    "Monetary Policy": [
+      "Digital Currency and Monetary Policy"
+    ],
+    "National Income": [
+      "Economic Indices and Statistics"
+    ],
+    "Pension & Insurance": [
+      "Insurance and Financial Instruments"
+    ],
+    "Poverty & Inequality": [
+      "Food Security and Global Reports"
+    ],
+    "Service Sector": [],
+    "Unemployment": [
+      "Employment and Rural Livelihoods"
+    ]
+  },
+  "Environment and Ecology": {
+    "Biodiversity & Conservation": [
+      "Biodiversity and Species Discovery",
+      "Biodiversity Heritage Sites",
+      "Invasive Alien Species",
+      "Protected Areas and Biosphere Reserves",
+      "Protected Areas and Wildlife Corridors",
+      "Species and Conservation",
+      "Wetlands and Ramsar Sites"
+    ],
+    "Climate Change": [
+      "Biomass and Carbon Sequestration",
+      "Climate Change and Climate Finance",
+      "Climate Change and National Commitments",
+      "Climate Change and Urban Resilience",
+      "Forests and Climate Action"
+    ],
+    "Ecology": [
+      "Ecology and Symbiosis",
+      "Ecology and Vegetation Change"
+    ],
+    "Environmental Laws & Regulations": [
+      "Biodiversity Laws and Institutions",
+      "Desertification and International Conventions",
+      "Environmental Conservation and Regulation",
+      "Environmental Impact Assessment",
+      "Environmental Rights and River Conservation",
+      "Plant Varieties and Farmers' Rights"
+    ],
+    "Miscellaneous": [
+      "Environmental Indices and Reports"
+    ],
+    "Pollution": [
+      "Pesticides and Food Safety"
+    ],
+    "Sustainable Development": [
+      "Desertification and Climate Finance",
+      "Green Infrastructure and Data Centres"
+    ]
+  },
+  "Geography": {
+    "Climate of India": [],
+    "Climatology": [
+      "Climatology and El Nino",
+      "Climatology and Heatwaves"
+    ],
+    "Drainage of India": [
+      "Lakes and Wetlands",
+      "Rivers and Drainage Systems",
+      "Rivers and Water-Sharing Agreements"
+    ],
+    "Earth and the Universe": [],
+    "Earth's Interior and Crust": [
+      "Earth’s Interior and Crust",
+      "Earthquakes and Geophysical Processes",
+      "Tectonics and Geophysical Features"
+    ],
+    "Energy Resources": [
+      "Geothermal Resources",
+      "Mineral and Energy Resources"
+    ],
+    "Geomorphology": [
+      "Landslides and Disaster Management"
+    ],
+    "Industries": [],
+    "Location of India": [],
+    "Mineral Resources": [],
+    "Natural Vegetation": [
+      "Seed Conservation and Strategic Facilities"
+    ],
+    "Natural Vegetation of India": [],
+    "Oceanography": [
+      "Maritime Geography and Exclusive Economic Zones",
+      "Seas and World Geography",
+      "Straits and World Geography"
+    ],
+    "Physiography of India": [],
+    "Population": [],
+    "Soils of India": [],
+    "Urbanisation": []
+  },
+  "International Relations": {
+    "International Relations": [
+      "India-Australia Relations",
+      "India-Japan Relations",
+      "India-Nepal Relations",
+      "India-UK Relations",
+      "International Law",
+      "International Security and Defence Cooperation"
+    ],
+    "Miscellaneous": [
+      "Indices and Global Mobility"
+    ],
+    "Other Multilateral Organisations": [
+      "International Organisations",
+      "International Organisations and Criminal Justice",
+      "Regional Groupings and Security Cooperation"
+    ],
+    "Places in News": [],
+    "United Nations and its Bodies": []
+  },
+  "Science and Technology": {
+    "Biotechnology": [
+      "Biotechnology and Drug Discovery",
+      "Biotechnology and Medical Diagnostics",
+      "Biotechnology and Plant Breeding",
+      "Vaccines and Biotechnology"
+    ],
+    "Defence Technology": [
+      "Defence Research and Technology Transfer",
+      "Propulsion and Engine Technology"
+    ],
+    "General Biology": [],
+    "General Chemistry": [
+      "Hydrogen and Clean Transport",
+      "Medical Chemistry and Pharmaceuticals"
+    ],
+    "General Physics": [
+      "Optics and Material Properties",
+      "Scientific Awards and Physics"
+    ],
+    "Genetics and Heredity": [
+      "Gene Editing and Medical Biotechnology"
+    ],
+    "Human Health and Diseases": [
+      "Drug Regulation and Advanced Therapies",
+      "Microbiology and Human Health"
+    ],
+    "Human Physiology": [],
+    "IT & Computers": [
+      "Cybersecurity",
+      "Digital Public Services",
+      "Semiconductors and Electronics"
+    ],
+    "Miscellaneous": [
+      "Science, Technology & Innovation Policy"
+    ],
+    "Nanotechnology": [],
+    "Nuclear Technology": [
+      "Nuclear Energy and Regulation"
+    ],
+    "Plant Physiology": [],
+    "Robotics": [],
+    "Space Technology": [
+      "Satellite Navigation",
+      "Space Exploration",
+      "Space Law and International Liability",
+      "Space Technology and Institutions",
+      "Space Technology and Private Sector",
+      "Spacecraft and Re-entry Technology"
+    ],
+    "Telecommunications": []
+  }
+}};
+const CA_TOPIC_ALIASES=new Map(Object.entries(CA_SUBJECT_GROUPS).map(([subject,groups])=>[subject,new Map(Object.entries(groups).flatMap(([topic,aliases])=>[topic,...aliases].map(alias=>[alias,topic])))]));
 function isCaPolity(subject,space=S.space){return space==="ca"&&canonicalSubject(subject)==="Polity and Governance";}
-function questionTopic(q,space){return isCaPolity(q.subject,space)?CA_POLITY_ALIASES.get(q.topic)||q.topic:q.topic;}
+function caTopicGroups(subject,space=S.space){return space==="ca"?CA_SUBJECT_GROUPS[canonicalSubject(subject)]:undefined;}
+function questionTopic(q,space){
+  const aliases=space==="ca"&&CA_TOPIC_ALIASES.get(canonicalSubject(q.subject));
+  return aliases?aliases.get(q.topic)||q.topic:q.topic;
+}
 function canonicalQuestion(question){
   const subject=canonicalSubject(question.subject);
   return subject===question.subject?question:{...question,subject};
@@ -951,8 +1188,8 @@ function viewHome(){
 function topicGroups(o,g,subjects){
   return subjects.filter(s=>o.subjects.has(s)&&g.has(s)).map(sub=>{
     const entries=[...g.get(sub)];
-    if(S.view!=="smart"&&isCaPolity(sub))for(const topic of Object.keys(CA_POLITY_GROUPS))if(!g.get(sub).has(topic))entries.push([topic,[]]);
-    if(isCaPolity(sub))entries.sort(([a],[b])=>a.localeCompare(b));
+    if(S.view!=="smart"&&caTopicGroups(sub))for(const topic of Object.keys(caTopicGroups(sub)))if(!g.get(sub).has(topic))entries.push([topic,[]]);
+    if(caTopicGroups(sub))entries.sort(([a],[b])=>a.localeCompare(b));
     const ks=entries.filter(([,list])=>list.length).map(([t])=>topicKey(sub,t)),all=ks.length&&ks.every(k=>o.topics.has(k)),tot=entries.reduce((a,[,list])=>a+list.length,0);
     return `<div class="tgrp"><div class="row sp"><strong>${esc(sub)} <small class="muted">${tot} question${tot===1?"":"s"}</small></strong><button class="linkbtn" data-act="topall" data-ks='${esc(JSON.stringify(ks))}'>${all?"Clear":"Select all"}</button></div><div class="topic-grid">${entries.map(([t,list])=>{
       const k=topicKey(sub,t),on=o.topics.has(k);
@@ -1210,7 +1447,7 @@ function moveStep1(q){
   <div class="row"><button class="btn sm" data-act="movecancel">Cancel</button></div>`;
 }
 function moveStep2(q,sj){
-  const tops=[...new Set([...S.qs.filter(x=>x.subject===sj).map(x=>x.topic),...(isCaPolity(sj)?Object.keys(CA_POLITY_GROUPS):[])])].sort();
+  const tops=[...new Set([...S.qs.filter(x=>x.subject===sj).map(x=>x.topic),...(caTopicGroups(sj)?Object.keys(caTopicGroups(sj)):[])])].sort();
   return `<span class="label">Step 2 \u00b7 Sub-topic in <b>${esc(sj)}</b></span>${tops.length?`<div class="chips">${tops.map(x=>`<button class="pbtn" aria-pressed="${sj===q.subject&&x===q.topic}" data-act="mvgo" data-s="${esc(sj)}" data-v="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:`<p class="hint">No sub-topics yet in this subject. Type a new one.</p>`}
   <span class="label">Or type a new sub-topic</span><div class="row"><input class="delin mvnew" type="text" maxlength="80" placeholder="New sub-topic" aria-label="New sub-topic"><button class="btn sm pri" data-act="mvgonew" data-s="${esc(sj)}">Move here</button></div>
   <div class="row"><button class="btn sm" data-act="mvback">Back</button><button class="btn sm" data-act="movecancel">Cancel</button></div>`;
