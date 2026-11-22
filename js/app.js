@@ -2134,7 +2134,7 @@ document.addEventListener("click",event=>{
 });
 
 /* ---------- Learning dashboard ---------- */
-const DASH={testLength:50,testSubject:"",testView:"auto",open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
+const DASH={testLength:50,testSubject:"",open:true,scope:"mixed",mode:"first",band:"all",source:"",query:"",heatBy:"topic",detail:null,showQuestions:false,expanded:{},heatLimits:{},heatOpen:{},topicTrigger:null,insightsOpen:false};
 const DASH_BANDS={strength:{label:"Strengths",rule:"Above 70%",hint:"Keep these warm with light revision",colour:"#61d9a0"},opportunity:{label:"Opportunities",rule:"60–70%",hint:"A little practice can make these strengths",colour:"#86aaff"},weakness:{label:"Weaknesses",rule:"30–59%",hint:"Revisit concepts, then practise",colour:"#efc65d"},threat:{label:"Threats",rule:"Below 30%",hint:"Give these topics focused attention",colour:"#ff7d86"}};
 const DASH_MIN=5;
 const dashModeName=()=>({first:"First attempt",latest:"Latest answer",repeat:"Repeat practice"}[DASH.mode]);
@@ -2260,6 +2260,7 @@ const testDate=(t,full=false)=>Number.isFinite(t)&&t>0?new Date(t).toLocaleDateS
 function normalizeTestResult(row){
   if(!row||row.demo||typeof row.id!=="string"||!row.id||row.id.length>200||![50,100].includes(row.total)||!Object.hasOwn(SPACES,row.space)||!Number.isFinite(row.date)||!Number.isFinite(new Date(row.date).getTime())||!["exam","practice"].includes(row.mode)||![row.correct,row.incorrect,row.skipped].every(n=>Number.isInteger(n)&&n>=0)||row.correct+row.incorrect+row.skipped!==row.total||row.marks!==testMarks(row.correct,row.incorrect)||row.maxMarks!==row.total*2)return null;
   const result={id:row.id,date:row.date,total:row.total,space:row.space,mode:row.mode,correct:row.correct,incorrect:row.incorrect,skipped:row.skipped,marks:row.marks,maxMarks:row.maxMarks,sourceExam:["CSE","CAPF","mixed"].includes(row.sourceExam)?row.sourceExam:"",label:String(row.label||"Completed test").slice(0,120)};
+  if(typeof row.paperId==="string"&&row.paperId&&row.paperId.length<=200)result.paperId=row.paperId;
   if(row.bySubject&&typeof row.bySubject==="object"&&!Array.isArray(row.bySubject)){
     const parts=Object.entries(row.bySubject);
     if(parts.length&&parts.every(([name,a])=>name&&validTestSubject(a,row.total))&&["total","correct","incorrect","skipped"].every(key=>parts.reduce((n,[,a])=>n+a[key],0)===row[key]))result.bySubject=Object.fromEntries(parts.map(([name,a])=>[name,{total:a.total,correct:a.correct,incorrect:a.incorrect,skipped:a.skipped,marks:a.marks,maxMarks:a.maxMarks}]));
@@ -2370,20 +2371,34 @@ function savedStaticTests(){
     if(results.some(result=>!result))continue;
     const total=results.length,correct=results.filter(r=>r.ok).length,skipped=results.filter(r=>r.skipped).length,incorrect=total-correct-skipped;
     const date=Math.max(0,...pack.questions.map(q=>Number(S.prog[pack.id+":"+q.no]?.t)||0))||null;
-    rows.push({id:"saved:"+pack.id,date,total,space:"static",mode:"saved",label:pack.title||pack.id,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:total*2,bySubject:testSubjects(pack.questions,results)});
+    rows.push({id:"saved:"+pack.id,paperId:pack.id,date,total,space:"static",mode:"saved",label:pack.title||pack.id,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:total*2,bySubject:testSubjects(pack.questions,results)});
   }
   return rows;
 }
+// Keep every recorded attempt; use legacy progress only for papers without a snapshot.
+function recordedStaticPaperId(row,papers){
+  if(row.space!=="static")return "";
+  if(row.paperId)return papers.some(p=>p.paperId===row.paperId&&p.total===row.total)?row.paperId:"";
+  // Older sessions lack paper IDs. Only an exact, unambiguous paper title is safe to match.
+  const matches=papers.filter(p=>p.total===row.total&&p.label===row.label);
+  return matches.length===1?matches[0].paperId:"";
+}
 function progressHistory(){
-  const saved=readTestHistory();
-  const recorded=saved.filter(row=>(DASH.scope==="mixed"||row.space===DASH.scope)&&(DASH.scope!=="csat"||!DASH.source||(DASH.source==="untagged"?!row.sourceExam:row.sourceExam===DASH.source))).map(row=>({...row,bySubject:canonicalSubjectBreakdown(row.bySubject,row.total)}));
-  const papers=["static","mixed"].includes(DASH.scope)?savedStaticTests():[],recordedCount=recorded.filter(row=>row.total===DASH.testLength).length,savedCount=papers.filter(row=>row.total===DASH.testLength).length;
-  const view=DASH.testView==="auto"?(recordedCount?"attempts":"saved"):DASH.testView,scopeRows=view==="saved"?papers:recorded;
-  const subjects=[...new Set([...dashQuestions().map(q=>q.subject),...[...papers,...recorded].flatMap(row=>Object.keys(row.bySubject||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b));
-  let rows=scopeRows.filter(row=>row.total===DASH.testLength),missingSubjects=0;
+  const recorded=readTestHistory().filter(row=>(DASH.scope==="mixed"||row.space===DASH.scope)&&(DASH.scope!=="csat"||!DASH.source||(DASH.source==="untagged"?!row.sourceExam:row.sourceExam===DASH.source))).map(row=>({...row,bySubject:canonicalSubjectBreakdown(row.bySubject,row.total)}));
+  const papers=["static","mixed"].includes(DASH.scope)?savedStaticTests():[];
+  const covered=new Set(recorded.map(row=>recordedStaticPaperId(row,papers)).filter(Boolean));
+  const combined=[...recorded,...papers.filter(row=>!covered.has(row.paperId))];
+  const subjects=[...new Set([...dashQuestions().map(q=>q.subject),...combined.flatMap(row=>Object.keys(row.bySubject||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  let rows=combined.filter(row=>row.total===DASH.testLength),missingSubjects=0;
   if(DASH.testSubject){missingSubjects=rows.filter(row=>!row.bySubject).length;rows=rows.flatMap(row=>{const a=Object.hasOwn(row.bySubject||{},DASH.testSubject)?row.bySubject[DASH.testSubject]:null;return validTestSubject(a,row.total)?[{...row,...a,paperTotal:row.total,subject:DASH.testSubject}]:[];});}
   rows.sort((a,b)=>a.date-b.date||a.id.localeCompare(b.id));
-  return {rows,subjects,missingSubjects,view,recordedCount,savedCount};
+  return {rows,subjects,missingSubjects,legacyCount:rows.filter(row=>row.mode==="saved").length};
+}
+function completedStaticPaperId(uids){
+  const unique=new Set(uids);
+  if(unique.size!==uids.length)return "";
+  const matches=S.packs.filter(pack=>packSpace(pack.id)==="static"&&pack.questions.length===uids.length&&pack.questions.every(q=>unique.has(pack.id+":"+q.no)));
+  return matches.length===1?matches[0].id:"";
 }
 function saveCompletedTest(Q){
   if(S.space!=="static"||!Q?.done||Q.progressSaved||![50,100].includes(Q.uids.length)||Q.kind==="Daily revision")return false;
@@ -2392,20 +2407,21 @@ function saveCompletedTest(Q){
   const correct=results.filter(r=>r.ok&&!r.skipped).length,skipped=results.filter(r=>r.skipped).length,incorrect=results.length-correct-skipped;
   const qs=Q.uids.map(uid=>S.byUid.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Date.now();
   const record={id:`${S.space}:${Q.start}:${date}`,date,total:Q.uids.length,space:S.space,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
+  const paperId=completedStaticPaperId(Q.uids);if(paperId)record.paperId=paperId;
   const added=recordTestResult(record);Q.progressSaved=true;return added;
 }
 const finishQuizBeforeProgress=finishQuiz;
 finishQuiz=function(){const Q=S.quiz,wasDone=Q?.done;finishQuizBeforeProgress();if(!wasDone&&Q?.done)saveCompletedTest(Q);};
 function dashProgressChart(){
   if(DASH.scope!=="static")return "";
-  const {rows,subjects,missingSubjects,view,recordedCount,savedCount}=progressHistory(),total=DASH.testLength,max=DASH.testSubject?Math.max(10,Math.ceil(Math.max(0,...rows.map(row=>row.maxMarks))/10)*10):total*2,width=Math.max(900,rows.length*26+110),height=310,left=58,right=28,top=24,bottom=48;
+  const {rows,subjects,missingSubjects,legacyCount}=progressHistory(),total=DASH.testLength,max=DASH.testSubject?Math.max(10,Math.ceil(Math.max(0,...rows.map(row=>row.maxMarks))/10)*10):total*2,width=Math.max(900,rows.length*26+110),height=310,left=58,right=28,top=24,bottom=48;
   const step=max/4,min=Math.min(0,Math.floor(Math.min(0,...rows.map(r=>r.marks))/step)*step),range=max-min;
   const x=i=>rows.length===1?(width+left-right)/2:left+i*(width-left-right)/(rows.length-1),y=v=>top+(max-v)/range*(height-top-bottom),ticks=[];
   for(let value=min;value<=max;value+=step)ticks.push(value);
   const labelEvery=Math.max(1,Math.ceil(rows.length/7));
   const points=rows.map((row,i)=>`${x(i).toFixed(2)},${y(row.marks).toFixed(2)}`).join(" ");
-  const graph=rows.length?`<div class="swot-progress-scroll"><svg class="swot-test-chart" viewBox="0 0 ${width} ${height}" style="min-width:${Math.max(600,rows.length*20)}px" role="group" aria-labelledby="swot-test-chart-title swot-test-chart-desc"><title id="swot-test-chart-title">${total}-question test marks over time</title><desc id="swot-test-chart-desc">${view==="saved"?"Latest saved question outcomes per imported test, ordered by last activity.":"Completed test attempts, ordered by completion date."} Results from ${rows.length} tests. Hover, tap, or focus a point for its date, correct, incorrect, skipped and marks.</desc>${ticks.map(value=>`<line class="swot-test-grid${value===0?' zero':''}" x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text class="swot-test-axis" x="${left-12}" y="${y(value)+5}" text-anchor="end">${value}</text>`).join("")}<polyline class="swot-test-line" points="${points}"/>${rows.map((row,i)=>`${(i%labelEvery===0&&i<rows.length-labelEvery)||i===rows.length-1?`<text class="swot-test-axis" x="${x(i)}" y="${height-14}" text-anchor="${i===0?'start':i===rows.length-1?'end':'middle'}">${testDate(row.date)}</text>`:""}<g class="swot-test-point" tabindex="0" role="button" data-dash-act="test-point" data-test-point="${i}" aria-label="${esc((row.mode==="saved"?"Last activity ":"")+testDate(row.date,true)+', '+(row.label||SPACES[row.space].label)+', '+testPointSubjects(row)+', '+row.correct+' correct, '+row.incorrect+' incorrect, '+row.skipped+' skipped, '+row.marks+' marks out of '+row.maxMarks)}" aria-describedby="swot-test-tooltip"><circle class="swot-test-hit" cx="${x(i)}" cy="${y(row.marks)}" r="13"/><circle class="swot-test-dot" cx="${x(i)}" cy="${y(row.marks)}" r="5"/></g>`).join("")}</svg></div>`:`<div class="swot-progress-empty">${ic("quiz")}<h3>No ${DASH.testSubject?esc(DASH.testSubject)+" results for ":""}${total}-question ${view==="saved"?"saved tests available":"attempts recorded yet"}</h3><p>${view==="saved"?"Saved tests appear when every question has an answer or an explicit skip.":"Finish a "+total+"-question Static test to record a new attempt."}</p></div>`;
-  return `<section class="swot-panel swot-progress" aria-labelledby="swot-progress-title"><div class="swot-panel-heading"><div><div class="swot-progress-title"><h2 id="swot-progress-title">Your test progress</h2></div><p>${DASH.testSubject?esc(DASH.testSubject)+" · ":""}${view==="saved"?"Latest saved results · one point per imported test":"Marks over time · one point per completed attempt"}</p></div><div class="swot-progress-filters"><div class="swot-test-length"><label for="swot-test-subject">Subject</label><select id="swot-test-subject"><option value="">All subjects</option>${subjects.map(subject=>`<option value="${esc(subject)}"${DASH.testSubject===subject?' selected':''}>${esc(subject)}</option>`).join("")}</select></div><div class="swot-test-length"><label for="swot-test-length">Test length</label><select id="swot-test-length"><option value="50"${total===50?' selected':''}>Half-length · 50 questions</option><option value="100"${total===100?' selected':''}>Full-length · 100 questions</option></select></div></div></div><div class="seg swot-progress-source" role="group" aria-label="Result source"><button data-dash-act="test-view" data-value="saved" aria-pressed="${view==='saved'}">Saved tests (${savedCount})</button><button data-dash-act="test-view" data-value="attempts" aria-pressed="${view==='attempts'}">Recorded attempts (${recordedCount})</button></div><div class="swot-progress-plot">${graph}<div id="swot-test-tooltip" class="swot-test-tooltip" role="tooltip" hidden></div></div><div class="swot-progress-caption"><span><i></i>${DASH.testSubject?"Subject marks":"Total marks <small>/ "+max+"</small>"}</span><span>+2 correct · −0.66 incorrect · 0 skipped</span></div><p class="swot-panel-foot">${view==="saved"?"Latest saved answers for each imported test. Dates show last question activity, not the original submission date. These summaries are not added to attempt history.":testHistoryStatus()+" Separate attempt tracking starts with tests completed after the graph update."} ${DASH.testSubject?"Showing this subject’s portion of each "+total+"-question test. ":""}${missingSubjects?missingSubjects+" older tests have no saved subject breakdown and are excluded. ":""}Hover or tap a point for the full result.</p></section>`;
+  const graph=rows.length?`<div class="swot-progress-scroll"><svg class="swot-test-chart" viewBox="0 0 ${width} ${height}" style="min-width:${Math.max(600,rows.length*20)}px" role="group" aria-labelledby="swot-test-chart-title swot-test-chart-desc"><title id="swot-test-chart-title">${total}-question test marks over time</title><desc id="swot-test-chart-desc">Completed test results ordered by date. Older summaries use last question activity dates. Results from ${rows.length} tests. Hover, tap, or focus a point for its date, correct, incorrect, skipped and marks.</desc>${ticks.map(value=>`<line class="swot-test-grid${value===0?' zero':''}" x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text class="swot-test-axis" x="${left-12}" y="${y(value)+5}" text-anchor="end">${value}</text>`).join("")}<polyline class="swot-test-line" points="${points}"/>${rows.map((row,i)=>`${(i%labelEvery===0&&i<rows.length-labelEvery)||i===rows.length-1?`<text class="swot-test-axis" x="${x(i)}" y="${height-14}" text-anchor="${i===0?'start':i===rows.length-1?'end':'middle'}">${testDate(row.date)}</text>`:""}<g class="swot-test-point" tabindex="0" role="button" data-dash-act="test-point" data-test-point="${i}" aria-label="${esc((row.mode==="saved"?"Last activity ":"")+testDate(row.date,true)+', '+(row.label||SPACES[row.space].label)+', '+testPointSubjects(row)+', '+row.correct+' correct, '+row.incorrect+' incorrect, '+row.skipped+' skipped, '+row.marks+' marks out of '+row.maxMarks)}" aria-describedby="swot-test-tooltip"><circle class="swot-test-hit" cx="${x(i)}" cy="${y(row.marks)}" r="13"/><circle class="swot-test-dot" cx="${x(i)}" cy="${y(row.marks)}" r="5"/></g>`).join("")}</svg></div>`:`<div class="swot-progress-empty">${ic("quiz")}<h3>No ${DASH.testSubject?esc(DASH.testSubject)+" results for ":""}${total}-question test results available</h3><p>Finish a ${total}-question Static test to record a result. Older papers appear when every question has an answer or an explicit skip.</p></div>`;
+  return `<section class="swot-panel swot-progress" aria-labelledby="swot-progress-title"><div class="swot-panel-heading"><div><div class="swot-progress-title"><h2 id="swot-progress-title">Your test progress</h2></div><p>${DASH.testSubject?esc(DASH.testSubject)+" · ":""}Marks over time · all test results in one view</p></div><div class="swot-progress-filters"><div class="swot-test-length"><label for="swot-test-subject">Subject</label><select id="swot-test-subject"><option value="">All subjects</option>${subjects.map(subject=>`<option value="${esc(subject)}"${DASH.testSubject===subject?' selected':''}>${esc(subject)}</option>`).join("")}</select></div><div class="swot-test-length"><label for="swot-test-length">Test length</label><select id="swot-test-length"><option value="50"${total===50?' selected':''}>Half-length · 50 questions</option><option value="100"${total===100?' selected':''}>Full-length · 100 questions</option></select></div></div></div><div class="swot-progress-plot">${graph}<div id="swot-test-tooltip" class="swot-test-tooltip" role="tooltip" hidden></div></div><div class="swot-progress-caption"><span><i></i>${DASH.testSubject?"Subject marks":"Total marks <small>/ "+max+"</small>"}</span><span>+2 correct · −0.66 incorrect · 0 skipped</span></div><p class="swot-panel-foot">${testHistoryStatus()} ${legacyCount?legacyCount+" older paper summaries use the latest saved answers and last activity date; they can change with further practice. Recorded attempts keep their original scores.":""} ${DASH.testSubject?"Showing this subject’s portion of each "+total+"-question test. ":""}${missingSubjects?missingSubjects+" older tests have no saved subject breakdown and are excluded. ":""}Hover or tap a point for the full result.</p></section>`;
 }
 function testPointSubjects(row){
   const names=row.subject?[row.subject]:Object.entries(row.bySubject||{}).filter(([,a])=>validTestSubject(a,row.total)).map(([name])=>name);
@@ -2414,7 +2430,7 @@ function testPointSubjects(row){
 function showTestPoint(point){
   const row=progressHistory().rows[Number(point.dataset.testPoint)],tip=document.getElementById("swot-test-tooltip"),plot=point.closest(".swot-progress-plot");if(!row||!tip||!plot)return;
   document.querySelectorAll('.swot-test-point.active').forEach(el=>el.classList.remove('active'));point.classList.add('active');
-  tip.innerHTML=`<div class="swot-test-tip-head"><strong>${testDate(row.date,true)}</strong><span>${row.mode==="saved"?"Last activity":esc(row.space==="ca"?"CA":SPACES[row.space].label)+" · "+(row.mode==="exam"?"Exam":"Practice")}</span></div>${row.mode==="saved"?`<div class="swot-test-tip-paper" title="${esc(row.label)}">${esc((String(row.label).match(/\btest[\s-]*(\d+)/i)||[])[1]?"Test "+String(row.label).match(/\btest[\s-]*(\d+)/i)[1]:row.label)}</div>`:""}<div class="swot-test-tip-subject">${esc(testPointSubjects(row))}</div><div class="swot-test-tip-marks"><strong>${row.marks.toFixed(2)}</strong><span>/ ${row.maxMarks} marks</span></div><div class="swot-test-tip-counts"><span><b>${row.correct}</b>Correct</span><span><b>${row.incorrect}</b>Incorrect</span><span><b>${row.skipped}</b>Skipped</span></div>`;
+  tip.innerHTML=`<div class="swot-test-tip-head"><strong>${testDate(row.date,true)}</strong><span>${row.mode==="saved"?"Last activity":esc(row.space==="ca"?"CA":SPACES[row.space].label)+" · "+(row.mode==="exam"?"Exam":"Practice")}</span></div>${row.label?`<div class="swot-test-tip-paper" title="${esc(row.label)}">${esc((String(row.label).match(/\btest[\s-]*(\d+)/i)||[])[1]?"Test "+String(row.label).match(/\btest[\s-]*(\d+)/i)[1]:row.label)}</div>`:""}<div class="swot-test-tip-subject">${esc(testPointSubjects(row))}</div><div class="swot-test-tip-marks"><strong>${row.marks.toFixed(2)}</strong><span>/ ${row.maxMarks} marks</span></div><div class="swot-test-tip-counts"><span><b>${row.correct}</b>Correct</span><span><b>${row.incorrect}</b>Incorrect</span><span><b>${row.skipped}</b>Skipped</span></div>`;
   tip.hidden=false;const dot=point.querySelector('.swot-test-dot').getBoundingClientRect(),box=plot.getBoundingClientRect();
   tip.style.left=Math.max(8,Math.min(dot.left-box.left+dot.width/2-tip.offsetWidth/2,box.width-tip.offsetWidth-8))+"px";
   const gap=14,above=dot.top-box.top-tip.offsetHeight-gap,below=dot.bottom-box.top+gap;
@@ -2469,7 +2485,6 @@ document.addEventListener("click",event=>{
   if(act==="radar-score"){el.focus({preventScroll:true});return;}
   if(act==="test-point"){el.focus({preventScroll:true});showTestPoint(el);return;}
   if(act==="history-retry"){loadTestHistory(S.store,S.storage);return;}
-  if(act==="test-view"&&["saved","attempts"].includes(value))DASH.testView=value;
   if(act==="open"){openSwot();return;}
   if(act==="detail"){openDashTopic(el.dataset.key,el);return;}
   if(act==="close-detail"){document.getElementById("swot-topic-dialog")?.close();return;}
