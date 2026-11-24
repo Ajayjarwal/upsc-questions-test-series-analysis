@@ -87,7 +87,7 @@ test('changed pending questions are held out of new questions and do not block a
 });
 test('a permanent server rejection keeps recovery evidence and continues unrelated queued answers',async()=>{
   const f=fixture(),cloud=remote(f.run('mergeProgress')),store=cloud.store('alice'),save=store.saveProgressChanges;cloud.bank('alice').packs.push({...paper(),id:'other'});store.saveProgressChanges=(op,ids)=>op.pid==='paper'?Promise.reject(Error('A question changed. Keep a backup before retrying.')):save(op,ids);await f.open(store);
-  f.run("recordAnswer('paper:1','A');recordAnswer('other:1','B')");await f.run('flush()');assert.equal(f.run('PROGRESS.conflicts.size'),1);assert.equal(cloud.bank('alice').prog.other['1'].w,1);assert.equal(f.run('PROGRESS.ops.size'),0);
+  f.run("recordAnswer('paper:1','A');recordAnswer('other:1','B')");await f.run('flush()');assert.equal(f.run('PROGRESS.conflicts.size'),1);assert.equal(f.run("S.prog['paper:1']"),undefined);assert.equal(cloud.bank('alice').prog.other['1'].w,1);assert.equal(f.run('PROGRESS.ops.size'),0);
 });
 test('receipts arriving between bank reads refresh progress before retiring the local operation',async()=>{
   const a=fixture(),cloud=remote(a.run('mergeProgress'));await a.open(cloud.store('alice'));a.run("recordAnswer('paper:1','A')");const store=cloud.store('alice'),receipts=store.loadProgressReceipts;store.loadProgressReceipts=async ids=>{await a.run('flush()');return receipts(ids);};const b=fixture(a.storage);await b.open(store);assert.equal(b.run("S.prog['paper:1'].a"),1);assert.equal(b.run('PROGRESS.ops.size'),0);

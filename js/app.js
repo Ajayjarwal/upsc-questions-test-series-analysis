@@ -668,6 +668,7 @@ function progressConflict(op){
 }
 function holdProgressOperation(op,reason){
   op.blockedReason=reason;PROGRESS.conflicts.set(op.id,op);PROGRESS.ops.delete(op.id);cacheProgressOperation(op);
+  acceptProgressResponse(op.pid,{items:PROGRESS.base[op.pid]||{},applied:[]});
 }
 function progressRecoveryCard(){
   const rows=[...PROGRESS.conflicts.values()];if(!rows.length)return '';
