@@ -152,3 +152,5 @@
 
 :root[data-session-active=true] .point-label,:root[data-session-active=true] .river-label,:root[data-session-active=true] .label-leader{display:none!important}
 :root[data-session-active=true] .world-country,:root[data-session-active=true] .india-state{pointer-events:none}
+
+.map-save-status{font-size:.875rem;color:var(--muted);max-width:210px}@media(max-width:640px){.map-save-status{display:none}}

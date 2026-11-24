@@ -1186,3 +1186,8 @@ body.swot-topic-open{overflow:hidden}
 .ui-menu-item:focus-visible,.ui-tabs .tab:focus-visible{outline:2px solid var(--gold);outline-offset:4px}
 
 .ui-mapping-link{min-height:78px}
+.save-status-wrap{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.save-status{font-size:.875rem;color:var(--muted);white-space:normal}
+.resume-card .row.sp{gap:14px;padding:12px 0}
+.resume-card h2{margin-bottom:8px}
+@media(max-width:640px){.hdr-r{flex-wrap:wrap;justify-content:flex-end}.resume-card .row.sp{align-items:flex-start}}

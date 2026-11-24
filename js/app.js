@@ -33,6 +33,15 @@ const SPACES={
   csat:{label:"CSAT",prefix:"csat::"},
   capf:{label:"CAPF",prefix:"capf::"}
 };
+// Existing Static papers retain their published +2/−0.66 convention.
+const MARKING={static:{right:2,wrong:.66},ca:{right:2,wrong:.66},cse:{right:2,wrong:2/3},capf:{right:2,wrong:2/3},csat:{right:2.5,wrong:2.5/3}};
+const roundMarks=n=>Math.round((n+Number.EPSILON)*100)/100;
+function markingFor(q,space=S.space){return MARKING[space==="csat"&&questionSourceExam(q||{})==="CAPF"?"capf":space]||MARKING.static;}
+function resultScore(rows,Q=S.quiz){
+  let marks=0,max=0;
+  for(const r of rows){const rule=Q?.scoring?.[r.u]||markingFor(S.byUid.get(r.u));max+=rule.right;if(!r.skipped)marks+=r.ok?rule.right:-rule.wrong;}
+  return {marks:roundMarks(marks),max:roundMarks(max)};
+}
 /* ---------- state ---------- */
 const S={
   tab:"practice", view:"home", step:1, ready:false, storage:"browser", store:null, auth:(CONFIG.supabaseUrl||CONFIG.requireLogin)?"checking":"none", authErr:"", authMode:"in", authMsg:null, authEmail:"", user:null, sb:null,
@@ -42,6 +51,9 @@ const S={
   quiz:null, bk:{parsed:null,error:""}, imp:{parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""}, confirmDel:null, newMode:"practice", space:(()=>{try{const saved=localStorage.getItem("rd_space");return Object.hasOwn(SPACES,saved)?saved:"static";}catch(e){return "static";}})(), mdText:"",theme:(()=>{try{return localStorage.getItem("rd_theme")==="light"?"light":"dark";}catch(e){return "dark";}})()
 };
 const app=document.getElementById("app");
+let bankGeneration=0;
+const bankContext=()=>({store:S.store,generation:bankGeneration});
+function assertBank(context){if(S.store!==context.store||bankGeneration!==context.generation)throw Error("The account changed. The previous action was stopped.");}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const slug=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60);
 const topicKey=(s,t)=>s+"\u203a"+t;
@@ -88,6 +100,14 @@ function localBackend(K="recall-desk-v1"){
   const write=d=>{try{localStorage.setItem(K,JSON.stringify(d));}catch(e){throw new Error("This browser blocked saving.");}};
   return {
     historyOwner:"browser:"+K,
+    progressOwner:"browser:"+K,
+    async loadProgressReceipts(ids){const d=read();return ids.filter(id=>d.receipts?.[id]);},
+    async saveProgressChanges(op,pending=[]){
+      const save=()=>{const d=read();d.receipts=d.receipts||{};d.prog=d.prog||{};if(!d.packs[op.pid])throw Error("This question set is no longer available.");let items=d.prog[op.pid]||{};
+        if(!d.receipts[op.id]){for(const c of op.changes){const q=d.packs[op.pid].questions.find(q=>String(q.no)===c.no);if(c.after&&(!q||!progressEqual(questionIdentity(q),c.identity)))throw Error("A question changed. Keep a backup before retrying.");const next=mergeProgress(items[c.no],c.before,c.after,c.replace);if(next===null)delete items[c.no];else items[c.no]=next;}d.prog[op.pid]=items;d.receipts[op.id]=true;write(d);}
+        return {items:d.prog[op.pid]||{},applied:[op.id,...pending].filter(id=>d.receipts[id])};};
+      return typeof navigator!=="undefined"&&navigator.locks?navigator.locks.request("solo-progress:"+K,save):save();
+    },
     async load(){const d=read();return {packs:Object.values(d.packs).map(p=>({...p,chunks:1})),prog:d.prog};},
     async savePack(p){const d=read();d.packs[p.id]={id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions};write(d);},
     async saveProg(pid,items){const d=read();d.prog[pid]=items;write(d);},
@@ -98,6 +118,11 @@ function supaBackend(sb,uid){
   const ck=r=>{if(r.error)throw new Error(r.error.message||"Database error");return r.data||[];};
   return {
     quoteOwner:"cloud:"+uid,
+    progressOwner:"cloud:"+uid,
+    async saveProgressChanges(op,pending=[]){return ck(await sb.rpc("apply_progress_changes",{p_pack:op.pid,p_id:op.id,p_changes:op.changes,p_pending:pending}));},
+    async loadProgressReceipts(ids){
+      const found=[];for(let from=0;from<ids.length;from+=500){const rows=ck(await sb.from("progress_receipts").select("id").eq("user_id",uid).in("id",ids.slice(from,from+500)));found.push(...rows.map(r=>r.id));}return found;
+    },
     async loadTestResults(){
       const out=[],size=1000;
       for(let from=0;;from+=size){
@@ -132,7 +157,7 @@ function supaBackend(sb,uid){
 }
 let chain=Promise.resolve();
 function enqueue(fn){
-  const pending=chain.then(fn);
+  const context=bankContext(),pending=chain.then(()=>{assertBank(context);return fn();});
   // Recover the queue while returning the failure to the action awaiting this save.
   chain=pending.catch(e=>{toast("Could not save: "+((e&&e.message)||"unknown error"));});
   return pending;
@@ -535,19 +560,155 @@ function tickQ(){
   Q.t0=now;
 }
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")tickQ();else if(S.quiz&&!S.quiz.done)S.quiz.t0=Date.now();});
-const getP=uid=>S.prog[uid]||(S.prog[uid]={a:0,c:0,w:0,sk:0,l:"",m:0,x:"",b:0,t:0});
+function getP(uid){const p=S.prog[uid]||(S.prog[uid]={a:0,c:0,w:0,sk:0,l:"",m:0,x:"",b:0,t:0});for(const key of ['a','c','w','sk','m','b','t'])if(!Number.isFinite(p[key])||p[key]<0)p[key]=0;return p;}
 let saveSet=new Set(),saveTimer=0;
-function queueSave(pid){saveSet.add(pid);clearTimeout(saveTimer);saveTimer=setTimeout(flushInBackground,700);}
+const PROGRESS_PREFIX=LOCAL_PREVIEW?"solo-progress-preview-v2:":"solo-progress-v2:";
+let progressStamp=0;
+const PROGRESS={store:null,owner:"",generation:0,ops:new Map(),observed:{},base:{},chain:Promise.resolve(),error:"",cacheError:false,retry:0};
+const QUIZ_PREFIX=LOCAL_PREVIEW?"solo-quiz-preview-v2:":"solo-quiz-v2:";
+const QUIZ_DRAFTS={rows:[],error:false,dirty:true};
+const quizOwner=()=>S.store?.progressOwner||S.store?.quoteOwner||S.store?.historyOwner||"";
+function quizStorageKey(owner,id){return QUIZ_PREFIX+encodeURIComponent(owner)+":"+id;}
+function saveQuizSession(){
+  const Q=S.quiz,owner=quizOwner();if(!Q||Q.draftFinalized||!owner||!S.ready)return;
+  Q.id=Q.id||progressId();Q.space=Q.space||S.space;
+  const elapsed=Q.done?Q.elapsed:(Q.elapsedBase||0)+Date.now()-(Q.resumeClock||Q.start);
+  const quiz=structuredClone({...Q,elapsedActive:Math.max(0,elapsed),t0:0});
+  const identities=Object.fromEntries(Q.uids.map(uid=>[uid,S.byUid.has(uid)?questionIdentity(S.byUid.get(uid)):null]));
+  try{localStorage.setItem(quizStorageKey(owner,Q.id),JSON.stringify({owner,quiz,identities,updated:Date.now()}));QUIZ_DRAFTS.error=false;QUIZ_DRAFTS.dirty=true;}catch(error){QUIZ_DRAFTS.error=true;}
+}
+function loadQuizSessions(){
+  const owner=quizOwner(),prefix=QUIZ_PREFIX+encodeURIComponent(owner)+":";QUIZ_DRAFTS.rows=[];QUIZ_DRAFTS.dirty=false;if(!owner)return;
+  const qs=new Map(S.packs.flatMap(p=>p.questions.map(q=>[p.id+':'+q.no,q])));
+  try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;const row=JSON.parse(localStorage.getItem(key));if(row?.owner!==owner||!Object.hasOwn(SPACES,row.quiz?.space)||!Array.isArray(row.quiz.uids)||!row.quiz.uids.length||row.quiz.uids.length>5000)continue;
+    const valid=new Set(row.quiz.uids).size===row.quiz.uids.length&&row.quiz.uids.every(uid=>qs.has(uid)&&progressEqual(questionIdentity(qs.get(uid)),row.identities?.[uid]));
+    QUIZ_DRAFTS.rows.push({...row,key,valid});
+  }}catch(error){QUIZ_DRAFTS.error=true;}
+  QUIZ_DRAFTS.rows.sort((a,b)=>b.updated-a.updated);
+}
+function resumeCard(){
+  if(S.quiz||!QUIZ_DRAFTS.rows.length)return '';
+  return `<section class="card resume-card"><h2>Continue where you left off</h2><p class="hint">Saved on this browser for this account. Exam answers stay unchecked until you submit.</p>${QUIZ_DRAFTS.rows.slice(0,3).map(row=>`<div class="row sp"><div><strong>${esc(row.quiz.label||row.quiz.kind||'Unfinished test')}</strong><p class="hint">${SPACES[row.quiz.space].label} · ${row.quiz.uids.length} questions${row.valid?'':' · Questions changed; this draft cannot be resumed safely'}</p></div><div class="row"><button class="btn pri sm" data-act="resume-quiz" data-v="${esc(row.quiz.id)}" ${row.valid?'':'disabled'}>${row.quiz.done?'Recover result':'Resume'}</button><button class="linkbtn" data-act="discard-quiz" data-v="${esc(row.quiz.id)}">Discard draft</button></div></div>`).join('')}</section>`;
+}
+function discardQuizDraft(id){try{localStorage.removeItem(quizStorageKey(quizOwner(),id));}catch(error){}QUIZ_DRAFTS.rows=QUIZ_DRAFTS.rows.filter(row=>row.quiz.id!==id);}
+function resumeQuiz(id){
+  loadQuizSessions();const row=QUIZ_DRAFTS.rows.find(row=>row.quiz.id===id);if(!row?.valid){toast('This draft no longer matches your questions.');return;}
+  resetPracticeSpace(row.quiz.space);DASH.open=false;S.quiz=structuredClone(row.quiz);S.quiz.t0=Date.now();S.quiz.resumeClock=Date.now();S.quiz.elapsedBase=S.quiz.elapsedActive||0;S.quiz.i=Math.max(0,Math.min(S.quiz.uids.length-1,S.quiz.i||0));S.tab='practice';
+  if(S.quiz.done){if(!S.quiz.progressSaved)saveCompletedTest(S.quiz);S.quiz.draftFinalized=true;discardQuizDraft(id);}else if(S.quiz.submitting)finishQuiz();
+  render();window.scrollTo(0,0);
+}
+function stableJson(value){return JSON.stringify(value,(_,v)=>plainObject(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
+const progressEqual=(a,b)=>stableJson(a??null)===stableJson(b??null);
+const progressId=()=>typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)+"-"+Math.random().toString(36).slice(2);
+function mergeProgress(current,before,after,replace=false){
+  if(replace)return after===null?null:structuredClone(after);
+  const c=structuredClone(current||{}),b=before||{},a=after||{};
+  if(after===null)return progressEqual(c,b)?null:c;
+  const newer=(a.t||0)>=(c.t||0),counters=new Set(['a','c','w','sk','cw','ts','tn']),answerFields=new Set(['l','x','m','bx','dd','cd','tm','sl','cf','rn','t']);
+  for(const k of new Set([...Object.keys(b),...Object.keys(a)])){
+    if(!safeKey(k)||progressEqual(b[k],a[k])||k==='first'||k==='repeat')continue;
+    if(counters.has(k)){const delta=(a[k]||0)-(b[k]||0);c[k]=Math.max(0,(c[k]||0)+delta);}
+    else if(!answerFields.has(k)||newer){if(Object.hasOwn(a,k))c[k]=structuredClone(a[k]);else delete c[k];}
+  }
+  const repeat={a:c.repeat?.a||0,c:c.repeat?.c||0,sk:c.repeat?.sk||0};
+  for(const k of ['a','c','sk'])repeat[k]=Math.max(0,repeat[k]+(a.repeat?.[k]||0)-(b.repeat?.[k]||0));
+  if(!b.first&&a.first){
+    if(c.first){const extra=a.first.t<c.first.t?c.first:a.first;if(a.first.t<c.first.t)c.first=structuredClone(a.first);if(extra.skipped)repeat.sk++;else{repeat.a++;if(extra.ok)repeat.c++;}}
+    else c.first=structuredClone(a.first);
+  }
+  if(a.repeat||b.repeat||c.repeat||repeat.a||repeat.sk)c.repeat=repeat;
+  return c;
+}
+function progressOperationKey(owner,id){return PROGRESS_PREFIX+encodeURIComponent(owner)+":"+id;}
+function readProgressOperations(owner){
+  const out=[],prefix=PROGRESS_PREFIX+encodeURIComponent(owner)+":";
+  try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;const op=JSON.parse(localStorage.getItem(key));if(op?.id&&op.owner===owner&&Array.isArray(op.changes)&&op.changes.length&&typeof op.pid==='string')out.push(op);}}catch(error){PROGRESS.cacheError=true;}
+  return out.sort((a,b)=>a.created-b.created||a.id.localeCompare(b.id));
+}
+function cacheProgressOperation(op){try{localStorage.setItem(progressOperationKey(op.owner,op.id),JSON.stringify(op));return true;}catch(error){PROGRESS.cacheError=true;return false;}}
+function forgetProgressOperation(id){PROGRESS.ops.delete(id);try{localStorage.removeItem(progressOperationKey(PROGRESS.owner,id));}catch(error){PROGRESS.cacheError=true;}}
+function resetProgressSession(){PROGRESS.generation++;clearTimeout(PROGRESS.retry);PROGRESS.store=null;PROGRESS.owner="";PROGRESS.ops=new Map();PROGRESS.observed={};PROGRESS.base={};PROGRESS.chain=Promise.resolve();PROGRESS.error="";PROGRESS.cacheError=false;}
+function questionIdentity(q){return {text:q.text,options:q.options,answer:q.answer,qimg:q.qimg||[]};}
+function captureProgress(pid,replace=false,operationId=""){
+  const h=PROGRESS;if(h.store!==S.store||!h.owner)return;
+  const items=itemsFor(pid),previous=h.observed[pid]||{},pack=S.packs.find(p=>p.id===pid),changes=[];
+  for(const no of new Set([...Object.keys(previous),...Object.keys(items)])){
+    const before=previous[no]||null,after=items[no]||null;if(progressEqual(before,after))continue;
+    const q=pack?.questions.find(q=>String(q.no)===no);
+    changes.push({no,before:before?cleanProgress(before):null,after:after?cleanProgress(after):null,replace,...(q?{identity:questionIdentity(q)}:{})});
+  }
+  if(!changes.length)return;
+  progressStamp=[...h.ops.values()].reduce((n,op)=>Math.max(n,Number(op.created)||0),Math.max(Date.now()-1,progressStamp))+1;
+  const op={id:operationId||progressId(),owner:h.owner,pid,created:progressStamp,changes};if(h.ops.has(op.id))return;h.ops.set(op.id,op);cacheProgressOperation(op);h.observed[pid]=structuredClone(items);updateSyncStatus();
+}
+function overlayProgress(pid,items){
+  let result=structuredClone(items||{});
+  for(const op of PROGRESS.ops.values())if(op.pid===pid)for(const c of op.changes){const next=mergeProgress(result[c.no],c.before,c.after,c.replace);if(next===null)delete result[c.no];else result[c.no]=next;}
+  return result;
+}
+async function loadProgressSession(store,prog){
+  resetProgressSession();const h=PROGRESS,generation=h.generation;
+  h.store=store;h.owner=store.progressOwner||"";h.base=structuredClone(prog||{});
+  if(!h.owner){h.observed=structuredClone(prog||{});return;}
+  const ops=readProgressOperations(h.owner);h.ops=new Map(ops.map(op=>[op.id,op]));
+  if(ops.length&&store.loadProgressReceipts){const acknowledged=await store.loadProgressReceipts(ops.map(op=>op.id));if(h.generation!==generation||h.store!==store)return;for(const id of acknowledged)forgetProgressOperation(id);}
+  const data=structuredClone(prog||{});for(const pid of new Set([...Object.keys(data),...h.ops.values()].map(x=>typeof x==='string'?x:x.pid)))data[pid]=overlayProgress(pid,data[pid]);
+  h.observed=structuredClone(data);applyProg(data);
+}
+function acceptProgressResponse(pid,response){
+  for(const id of response.applied||[])forgetProgressOperation(id);
+  const current=overlayProgress(pid,response.items||{});PROGRESS.base[pid]=structuredClone(response.items||{});PROGRESS.observed[pid]=structuredClone(current);
+  for(const uid of Object.keys(S.prog))if(uid.slice(0,uid.lastIndexOf(':'))===pid)delete S.prog[uid];
+  const pack=S.packs.find(p=>p.id===pid);for(const q of pack?.questions||[])if(Object.hasOwn(current,q.no))S.prog[pid+':'+q.no]=current[q.no];
+}
+function flushProgress(){
+  const h=PROGRESS,store=h.store,generation=h.generation;if(!store)return Promise.resolve();
+  h.chain=h.chain.catch(()=>{}).then(async()=>{
+    if(h.generation!==generation||S.store!==store)return;
+    try{
+      for(const op of [...h.ops.values()]){
+        if(h.generation!==generation||S.store!==store)return;if(!h.ops.has(op.id))continue;
+        const response=await store.saveProgressChanges(op,[...h.ops.values()].filter(x=>x.pid===op.pid).map(x=>x.id));
+        if(h.generation!==generation||S.store!==store)return;
+        if(!plainObject(response)||!plainObject(response.items)||!Array.isArray(response.applied)||!response.applied.includes(op.id))throw Error('The server did not confirm this save.');
+        acceptProgressResponse(op.pid,response);h.error="";updateSyncStatus();
+      }
+      h.error="";h.cacheError=false;
+    }catch(error){if(h.generation===generation&&S.store===store){h.error="Your answers are waiting to sync. "+(error?.message||"");clearTimeout(h.retry);h.retry=setTimeout(()=>flushInBackground(),15000);}throw error;}
+    finally{if(h.generation===generation&&S.store===store)updateSyncStatus();}
+  });
+  return h.chain;
+}
+function syncStatusText(){
+  if(QUIZ_DRAFTS.error)return "Test draft could not be saved in this browser";
+  if(PROGRESS.cacheError)return "Saving unavailable · keep this page open";
+  if(typeof navigator!=="undefined"&&navigator.onLine===false)return PROGRESS.ops.size?"Offline · answers saved on this browser":"Offline";
+  if(PROGRESS.error||TEST_HISTORY.state==='error'||quoteSync.state==='error')return "Waiting to sync";
+  if(PROGRESS.ops.size||saveSet.size||TEST_HISTORY.state==='saving'||quoteSync.state==='saving')return "Saving…";
+  return S.ready&&S.store?"Saved":"Opening your bank…";
+}
+function syncStatus(){return `<span class="save-status" role="status" aria-live="polite" data-sync-status>${esc(syncStatusText())}</span>${PROGRESS.error||TEST_HISTORY.state==='error'?'<button class="linkbtn" data-act="sync-retry">Retry</button>':''}`;}
+function syncBadge(){return `<span class="save-status-wrap" data-sync-container>${syncStatus()}</span>`;}
+function updateSyncStatus(){document.querySelectorAll?.('[data-sync-container]').forEach(node=>{node.innerHTML=syncStatus();});}
+function queueSave(pid,replace=false,operationId=""){
+  if(S.store?.saveProgressChanges&&PROGRESS.store===S.store)captureProgress(pid,replace,operationId);else saveSet.add(pid);
+  clearTimeout(saveTimer);saveTimer=setTimeout(flushInBackground,700);updateSyncStatus();
+}
 function flush(){
   clearTimeout(saveTimer);
   const store=S.store,pids=[...saveSet];saveSet=new Set();
-  return Promise.all(pids.map(pid=>{
+  const durable=S.store?.saveProgressChanges&&PROGRESS.store===S.store?flushProgress():Promise.resolve();
+  return Promise.all([durable,...pids.map(pid=>{
     const items=itemsFor(pid);
     return enqueue(()=>store.saveProg(pid,items)).catch(e=>{if(S.store===store)saveSet.add(pid);throw e;});
-  }));
+  })]);
 }
 function flushInBackground(){flush().catch(()=>{});}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushInBackground();});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveQuizSession();else if(S.ready&&!S.quiz){loadQuizSessions();updateSyncStatus();}});
+window.addEventListener?.('pagehide',saveQuizSession);
+window.addEventListener?.('online',()=>{if(S.bankRetry)openBank(S.bankRetry.store,S.bankRetry.mode);else if(S.store)flushInBackground();});
+window.addEventListener?.('offline',()=>{saveQuizSession();updateSyncStatus();});
 
 function stat(list){
   let att=0,ok=0,mis=0,ever=0;
@@ -584,6 +745,36 @@ function normalizeAnswerKey(value){
   if(keys.some(k=>! /^[A-F1-6]$/.test(k)))return [];
   return [...new Set(keys.map(k=>/^[1-6]$/.test(k)?"ABCDEF"[Number(k)-1]:k))].sort();
 }
+const plainObject=v=>!!v&&typeof v==="object"&&!Array.isArray(v);
+const safeKey=k=>!['__proto__','constructor','prototype'].includes(k);
+function normalizedOptions(value){
+  const entries=Array.isArray(value)?value.map((v,i)=>["ABCDEF"[i],v]):plainObject(value)?Object.entries(value):[];
+  if(entries.length<2||entries.length>6)return null;
+  const out={};
+  for(const [raw,value] of entries){const match=String(raw).match(/^\s*[([]?([A-Fa-f1-6])[)\].:]?\s*$/),text=typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)?String(value):'';if(!match||!text.trim())return null;const key=/\d/.test(match[1])?"ABCDEF"[Number(match[1])-1]:match[1].toUpperCase();if(Object.hasOwn(out,key))return null;out[key]=text.trim();}
+  return out;
+}
+function storedQuestion(q){
+  if(!plainObject(q)||!Number.isSafeInteger(q.no)||q.no<1||typeof q.text!=="string"||!q.text.trim()||typeof q.subject!=="string"||!q.subject.trim())return null;
+  const options=normalizedOptions(q.options),answer=normalizeAnswerKey(q.answer),exam=normalizeSourceExam(q.source_exam??q.exam);
+  if(!options||!answer.length||answer.some(k=>!Object.hasOwn(options,k))||exam===null)return null;
+  return {no:q.no,text:q.text,subject:canonicalSubject(q.subject.trim()),topic:String(q.topic||"General"),options,answer:answer.length===1?answer[0]:answer,exp:String(q.exp||""),sum:String(q.sum||""),src:(Array.isArray(q.src)?q.src:[]).map(String),qimg:normImgs(q.qimg),simg:normImgs(q.simg),year:String(q.year||""),...(exam?{source_exam:exam}:{}),...(okMonth(q.mo)?{mo:q.mo}:{}),...(q.question_type?{question_type:String(q.question_type)}:{})};
+}
+function cleanProgress(value){
+  if(!plainObject(value))return {};
+  const out={},numbers=new Set(['a','c','w','sk','b','m','t','bx','tm','ts','tn','sl','cw']);
+  for(const [k,v] of Object.entries(value)){
+    if(numbers.has(k)&&Number.isFinite(v)&&v>=0)out[k]=v;
+    else if(['l','x','cf','wy'].includes(k)&&typeof v==='string')out[k]=v.slice(0,10);
+    else if(k==='rn'&&typeof v==='string')out[k]=v.slice(0,2000);
+    else if(['dd','dr'].includes(k)&&/^\d{4}-\d{2}-\d{2}$/.test(v||''))out[k]=v;
+    else if(k==='cd'&&Array.isArray(v))out[k]=[...new Set(v.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)))];
+    else if(k==='first'&&plainObject(v)){out.first={};for(const [field,x] of Object.entries(v)){if(['ok','skipped'].includes(field)&&typeof x==='boolean')out.first[field]=x;else if(field==='t'&&Number.isFinite(x))out.first.t=x;else if(['pick','cf','reason'].includes(field)&&typeof x==='string')out.first[field]=x.slice(0,field==='reason'?2000:1);}}
+    else if(k==='repeat'&&plainObject(v))out.repeat=Object.fromEntries(Object.entries(v).filter(([field,x])=>['a','c','sk'].includes(field)&&Number.isFinite(x)&&x>=0));
+  }
+  return out;
+}
+
 const acceptedAnswers=q=>normalizeAnswerKey(q.answer);
 const isAcceptedAnswer=(q,pick)=>acceptedAnswers(q).includes(pick);
 const answerKeyNote=q=>acceptedAnswers(q).length>1?`<p class="info">Answer key accepts ${acceptedAnswers(q).join(" or ")}. Any one of these options is marked correct.</p>`:"";
@@ -603,8 +794,7 @@ function parseImport(text){
   let fileMonth="";{const dm=title.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/i)||title.match(/()(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/i);if(dm)fileMonth=dm[3]+"-"+String(MON.indexOf(dm[2].toLowerCase())+1).padStart(2,"0");}
   const topSubject=String(meta.subject||paper.subject||mm.subject||"").trim();
   const errors=[],out=[],used=new Set();
-  const letters="ABCDEF";
-  arr.forEach((r,i)=>{
+    arr.forEach((r,i)=>{
     const lab="Question "+((r&&r.no)!==undefined?r.no:i+1);
     if(!r||typeof r!=="object"){errors.push(lab+": not an object");return;}
     const sourceExam=normalizeSourceExam([r.source_exam,r.exam,paper.source_exam,paper.exam,meta.source_exam,meta.exam,mm.source_exam,mm.exam].find(value=>value!==undefined&&value!==null&&!(typeof value==="string"&&!value.trim())));
@@ -613,10 +803,8 @@ function parseImport(text){
     if(!subject){errors.push(lab+": no subject");return;}
     const text=String(r.question||r.q||"").trim();
     if(!text){errors.push(lab+": no question text");return;}
-    let opts={};
-    if(Array.isArray(r.options))r.options.forEach((o,k)=>{opts[letters[k]]=String(o).trim();});
-    else if(r.options&&typeof r.options==="object")for(const k in r.options){const L=String(k).toUpperCase().replace(/[^A-F]/g,"");if(L)opts[L]=String(r.options[k]).trim();}
-    if(Object.keys(opts).length<2){errors.push(lab+": needs at least 2 options");return;}
+    const opts=normalizedOptions(r.options);
+    if(!opts){errors.push(lab+": needs 2–6 non-empty options labelled A–F");return;}
     const answers=normalizeAnswerKey(r.accepted_answers??r.answers??r.answer);
     if(!answers.length||answers.some(L=>!opts[L])){errors.push(lab+": answer key must contain valid option letters");return;}
     const ans=answers.length===1?answers[0]:answers;
@@ -768,6 +956,12 @@ const CSAT_TOPIC_FAMILIES=[
   {aliases:["quantitative aptitude","numerical ability","basic numeracy","maths","mathematics"],terms:["percentage","percentages","ratio","proportion","average","profit and loss","time and work","time and distance","number system","probability","permutations","combinations","data interpretation"]}
 ];
 const QUESTION_SEARCH={cse:{draft:"",query:"",related:true,page:1},csat:{draft:"",query:"",related:true,page:1}};
+let QUESTION_INDEX={questions:null,space:"",rows:[]};
+function indexedQuestions(){
+  if(QUESTION_INDEX.questions===S.qs&&QUESTION_INDEX.space===S.space)return QUESTION_INDEX.rows;
+  const rows=S.qs.map(q=>({q,fields:[{name:"Question",value:q.text},{name:"Options",value:Object.values(q.options||{}).join(" ")},{name:"Solution",value:[q.exp,q.sum].filter(Boolean).join("\n")}].map(f=>({...f,normal:searchNormalize(f.value)})),labels:[{name:"Topic label",value:q.topic},{name:"Subject label",value:q.subject}].map(f=>({...f,normal:searchNormalize(f.value)}))}));
+  QUESTION_INDEX={questions:S.qs,space:S.space,rows};return rows;
+}
 const activeSearch=()=>QUESTION_SEARCH[S.space]||QUESTION_SEARCH.cse;
 function searchNormalize(value){
   return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim().split(/\s+/).map(w=>w==="center"?"centre":w==="relations"?"relation":w==="states"?"state":w==="centres"?"centre":w).join(" ");
@@ -783,10 +977,8 @@ function searchPlan(query,related=true){
 function searchQuestions(query,related=true){
   if(!isSearchSpace())return [];
   const plan=searchPlan(query,related);if(!plan.tokens.length)return [];
-  return S.qs.filter(q=>sourceExamOk(activeSearch(),q)).flatMap(q=>{
-    const fields=[{name:"Question",value:q.text},{name:"Options",value:Object.values(q.options||{}).join(" ")},{name:"Solution",value:[q.exp,q.sum].filter(Boolean).join("\n")}].map(f=>({...f,normal:searchNormalize(f.value)}));
+  return indexedQuestions().filter(({q})=>sourceExamOk(activeSearch(),q)).flatMap(({q,fields,labels})=>{
     const directFields=fields.filter(f=>plan.tokens.every(t=>hasSearchPhrase(f.normal,t)));
-    const labels=[{name:"Topic label",value:q.topic},{name:"Subject label",value:q.subject}].map(f=>({...f,normal:searchNormalize(f.value)}));
     const relatedCandidates=[...fields,...labels];
     const relatedFields=related?relatedCandidates.filter(f=>plan.aliases.some(a=>hasSearchPhrase(f.normal,a))||(labels.includes(f)&&hasSearchPhrase(f.normal,plan.phrase))):[];
     if(!directFields.length&&!relatedFields.length)return [];
@@ -1020,7 +1212,7 @@ function storageStatus(){
 function header(){
   const open=openMistakes().length;
   const tabs=[["practice","Practice","quiz"],["notebook","Notebook","notebook"],["marks","Bookmarks","mark"],["import","Import","book"]];
-  return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${DASH.open?"Dashboard":esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${themeBtn()}</div></div>
+  return `<header class="ui-header"><div class="ui-topbar"><div class="ui-brand"><button class="ui-menu-toggle" data-ui-menu="open" aria-label="Open navigation menu" aria-controls="ui-navigation-menu" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><button class="logo" data-act="home" aria-label="Solo Leveling, go to home">SOLO LEVELING</button><span class="ui-brand-caption"><span class="ui-active-space" aria-label="Current practice section">${DASH.open?"Dashboard":esc(spaceName())}</span></span></div></div><div class="ui-space-row ui-quote-only">${quoteCard()}</div><div class="hdr-r">${syncBadge()}${themeBtn()}</div></div>
   <nav class="tabs ui-tabs" role="tablist" aria-label="Study tools">${tabs.map(([key,label,icon])=>`<a class="tab" role="tab" aria-selected="${S.tab===key}" href="${sectionHash(S.space,key)}" data-v="${key}" data-route>${icon?ic(icon):""}${label}${key==="notebook"&&open?`<span class="badge">${open}</span>`:""}</a>`).join("")}</nav></header>`;
 }
 
@@ -1295,7 +1487,7 @@ function viewQuiz(){
     let cls="opt",flag="";
     if(locked){if(isAcceptedAnswer(q,L)){cls+=" right";flag="Correct";}else if(L===cur){cls+=" wrong";flag="Your answer";}}
     else if(cur===L)cls+=" sel";
-    return `<button class="${cls}" data-act="pick" data-v="${L}" role="radio" aria-checked="${cur===L}" ${locked?"disabled":""}><span class="dot">${L}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
+    return `<button class="${cls}" data-act="pick" data-v="${esc(L)}" role="radio" aria-checked="${cur===L}" ${locked?"disabled":""}><span class="dot">${esc(L)}</span><span class="txt">${esc(q.options[L])}</span>${flag?`<span class="flag">${flag}</span>`:""}</button>`;
   }).join("");
   const tmx=r&&r.tm?` \u00b7 ${r.tm}s${r.slow?" (slow, aim under 72s)":""}`:"",cfx=r&&r.cf?` \u00b7 ${CONF[r.cf]}`:"";
   const verdict=!locked?"":r.ok?`<p class="note">Correct.${r.cleared?" Cleared from your Notebook.":r.wasM?` Correct on ${r.days} of ${CLEAR_DAYS} days to clear it.`:""}${cfx}${tmx}</p>`:`<p class="note bad">Wrong. Added to your Notebook.${r.cf==="s"?" You were sure, so it is high priority.":cfx}${tmx}</p>`;
@@ -1331,7 +1523,8 @@ function whyChips(uid){
   return `<div class="cfrow"><span class="label">Why did you miss it?</span><div class="chips">${Object.keys(WHY).map(k=>`<button class="pbtn" aria-pressed="${cur===k}" data-act="why" data-v="${k}" data-u="${esc(uid)}">${WHY[k]}</button>`).join("")}</div></div>`;
 }
 function exitModal(Q){
-  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Are you sure you want to exit?</h2><p class="muted">${Q&&Q.mode==="exam"?"Your answers are not saved until you submit. If you leave now they are lost.":"Questions you have already checked are saved. The rest of this session will not count."}</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Yes, exit</button></div></div></div>`;
+  const message=QUIZ_DRAFTS.error?"This browser could not save a resumable draft. Exiting will lose unchecked answers.":Q?.mode==="exam"?"Your picks are saved as a draft on this browser. You can resume later; they are graded only when you submit.":"Checked answers are kept. This attempt is saved on this browser so you can resume it later.";
+  return `<div class="mback" role="dialog" aria-modal="true" aria-labelledby="xt"><div class="modal"><h2 id="xt">Are you sure you want to exit?</h2><p class="muted">${message}</p><div class="row"><button class="btn" data-act="exitno">Keep going</button><button class="btn pri" data-act="exitok">Yes, exit</button></div></div></div>`;
 }
 function finishModal(Q,exam){
   const n=Q.uids.length,a=answeredCount(Q),u=n-a,marked=markedCount(Q);
@@ -1342,7 +1535,7 @@ function finishModal(Q,exam){
 }
 function fmtTime(ms){const s=Math.round(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function guessBlock(R,score){
-  const rows=[["s","Sure"],["h","50-50"],["g","Guess"],["","Not tagged"]].map(([k,l])=>{const L=R.filter(r=>!r.skipped&&(r.cf||"")===k),c=L.filter(r=>r.ok).length,w=L.length-c;return {k,l,n:L.length,c,net:Math.round((c*2-w*0.66)*100)/100};}).filter(x=>x.n);
+  const rows=[["s","Sure"],["h","50-50"],["g","Guess"],["","Not tagged"]].map(([k,l])=>{const L=R.filter(r=>!r.skipped&&(r.cf||"")===k),c=L.filter(r=>r.ok).length;return {k,l,n:L.length,c,net:resultScore(L).marks};}).filter(x=>x.n);
   if(!rows.some(x=>x.k))return "";
   const risky=rows.filter(x=>x.k==="g"||x.k==="h"),rn=risky.reduce((a,x)=>a+x.net,0),rc=risky.reduce((a,x)=>a+x.n,0);
   const gnet=(rows.find(x=>x.k==="g")||{net:0}).net;
@@ -1353,7 +1546,7 @@ function guessBlock(R,score){
 function viewResult(){
   const Q=S.quiz,n=Q.uids.length,R=Q.uids.map(u=>({u,...Q.res[u]}));
   const c=R.filter(r=>r.ok).length,sk=R.filter(r=>r.skipped).length,w=n-c-sk;
-  const att=c+w,acc=att?Math.round(c/att*100):0,score=Math.round((c*2-w*0.66)*100)/100;
+  const att=c+w,acc=att?Math.round(c/att*100):0,scoring=resultScore(R,Q),score=scoring.marks;
   const wasM=R.filter(r=>r.wasM&&!r.skipped).length,cl=R.filter(r=>r.cleared).length,added=w+sk;
   const banner=Q.kind==="Daily revision"?`<strong>${R.filter(r=>!r.deferred).length} reviewed or skipped</strong><span class="muted">Unchecked questions stay in your queue. Wrong answers and explicit skips return on a later day; correct answers follow your review schedule.</span>`:wasM?`<strong>Cleared ${cl} of ${wasM} attempted</strong><span class="muted">The rest stay in your Notebook until you get them right with confidence on ${CLEAR_DAYS} different days</span>`:added?`<strong>${added} added to your Notebook</strong><span class="muted">Reattempt them any time with a Smart Quiz</span>`:`<strong>Clean sheet</strong><span class="muted">No mistakes in this session</span>`;
   const missed=R.filter(r=>!r.ok).map(r=>r.u);
@@ -1366,7 +1559,7 @@ function viewResult(){
     <div class="tile2"><span class="muted">Incorrect</span><span class="v r">${w}/${n}</span></div>
     <div class="tile2"><span class="muted">Skipped</span><span class="v m">${sk}/${n}</span></div>
     <div class="tile2"><span class="label">Accuracy</span><span class="v">${acc}%</span></div>
-    <div class="tile2"><span class="label">Score</span><span class="v">${score} / ${n*2}</span><span class="hint">+2 right, -0.66 wrong</span></div>
+    <div class="tile2"><span class="label">Score</span><span class="v">${score} / ${scoring.max}</span><span class="hint">${S.space==="csat"?"Marks follow each question’s CSE or CAPF source":S.space==="static"||S.space==="ca"?"+2 right, −0.66 wrong":"+2 right, −⅔ wrong"}</span></div>
     <div class="tile2"><span class="label">Time taken</span><span class="v">${fmtTime(Q.elapsed||0)}</span></div>
     <div class="tile2"><span class="label">Avg per question</span><span class="v">${avgT?avgT+"s":"-"}</span><span class="hint">Target about 72s</span></div>
     <div class="tile2"><span class="label">Correct but slow</span><span class="v">${slowN}</span><span class="hint">Over ${SLOW_S}s each</span></div>
@@ -1453,6 +1646,7 @@ function moveStep2(q,sj){
   <div class="row"><button class="btn sm" data-act="mvback">Back</button><button class="btn sm" data-act="movecancel">Cancel</button></div>`;
 }
 async function doMove(uid,sj,tp){
+  const context=bankContext();
   const q=S.byUid.get(uid);if(!q)return;
   sj=canonicalSubject(String(sj||"").trim().replace(/\s+/g," "));tp=String(tp||"").trim().replace(/\s+/g," ");
   if(!sj||!tp){toast("Enter a sub-topic");return;}
@@ -1462,6 +1656,7 @@ async function doMove(uid,sj,tp){
   const pk=S.packs.find(x=>x.id===q.packId),q0=pk&&pk.questions.find(x=>x.no===q.no);if(!q0)return;
   const old=pk.chunks||1,updated={...pk,questions:pk.questions.map(x=>x===q0?{...x,subject:sj,topic:tp}:x)};
   await enqueue(()=>S.store.savePack(updated,old));
+  assertBank(context);
   S.packs=S.packs.map(x=>x===pk?updated:x);rebuild();render();toast("Moved to "+sj+" \u203a "+tp);
 }
 const stOf=q=>{const p=S.prog[q.uid];return p&&p.a?(p.l==="c"?"ok":"bad"):(p&&p.sk?"skip":"new");};
@@ -1592,7 +1787,7 @@ function findSimilar(r){
   return out;
 }
 function dupCard(d,i){
-  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><div class="dq">${fmtQ(q.text)}</div><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${isAcceptedAnswer(q,L)?"right":""}"><b>${L}</b> ${esc(q.options[L])}${isAcceptedAnswer(q,L)?" ✓":""}</li>`).join("")}</ul></div>`;
+  const side=(q,lab)=>`<div class="dside"><span class="label">${lab}</span><span class="tag plain" style="align-self:flex-start">${esc(q.subject)} › ${esc(q.topic)}</span><div class="dq">${fmtQ(q.text)}</div><ul class="dopts">${Object.keys(q.options).map(L=>`<li class="${isAcceptedAnswer(q,L)?"right":""}"><b>${esc(L)}</b> ${esc(q.options[L])}${isAcceptedAnswer(q,L)?" ✓":""}</li>`).join("")}</ul></div>`;
   return `<div class="dup"><div class="row sp"><strong>New Q${d.newQ.no} looks similar</strong><span class="muted">${Math.round(d.score*100)}% match</span></div><div class="dcols">${side(d.old,"Already in your bank")}${side(d.newQ,"New in this file")}</div>
   <div class="seg">${[["old","Keep existing"],["new","Keep new"],["both","Keep both"]].map(([k,l])=>`<button aria-pressed="${d.choice===k}" data-act="dup" data-i="${i}" data-v="${k}">${l}</button>`).join("")}</div></div>`;
 }
@@ -1663,7 +1858,7 @@ function render(){
   else body=viewImport();
   const keepScroll=window.scrollY;
   const focus=S.ready&&S.tab==="practice"&&((S.quiz&&!S.quiz.done)||(!S.quiz&&S.view==="tr"));
-  app.innerHTML=(focus?`<div class="row" style="justify-content:flex-end">${themeBtn()}</div>`:header())+body;
+  app.innerHTML=(focus?`<div class="row" style="justify-content:flex-end">${syncBadge()}${themeBtn()}</div>`:header())+resumeCard()+body;
   window.scrollTo(0,keepScroll);
   if(S.tab==="import"){bindImport();}
 }
@@ -1721,12 +1916,30 @@ async function authMagic(){
   const r=await S.sb.auth.signInWithOtp({email,options:{emailRedirectTo:authBack()}});
   S.authMsg=r.error?{text:r.error.message,bad:1}:{text:"Login link sent. Open it on this device."};render();
 }
-function resetData(){resetTestHistory();S.store=null;S.storage="browser";S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";saveSet=new Set();resetQuoteSession();}
+function resetData(){
+  saveQuizSession();QUIZ_DRAFTS.rows=[];QUIZ_DRAFTS.error=false;QUIZ_DRAFTS.dirty=true;bankGeneration++;resetProgressSession();resetTestHistory();clearTimeout(saveTimer);
+  S.store=null;S.storage="browser";S.packs=[];S.qs=[];S.byUid=new Map();S.prog={};S.quiz=null;S.view="home";S.tab="practice";S.tr=null;
+  S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};S.bk={parsed:null,error:""};S.mdText="";S.importing=false;S.restoring=false;S.nb.subject=undefined;
+  S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.months=new Set();S.sel.pack="all";S.smart={subject:"",subjects:new Set(),topics:new Set(),step:1,count:20,custom:15,mode:"practice",back:"practice"};
+  for(const search of Object.values(QUESTION_SEARCH)){search.draft="";search.query="";search.page=1;}
+  QUESTION_INDEX={questions:null,space:"",rows:[]};saveSet=new Set();resetQuoteSession();
+}
 
 /* ---------- backup ---------- */
 function buildBackup(){
   const progress={};for(const p of S.packs)progress[p.id]=itemsFor(p.id);
-  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions.map(canonicalQuestion)})),progress,test_history:readTestHistory()});
+  let mapping=null;try{const raw=localStorage.getItem("solo-ui-lab-rivers-v1");if(raw)mapping=normalizeMappingBackup(JSON.parse(raw));}catch(error){}
+  const quotes=accountQuoteMode(S.storage)&&(quoteSync.owner!==S.store?.quoteOwner||quoteSync.state!=="ready")?null:dailyQuotes;
+  return JSON.stringify({schema:"recall-desk-backup/1",exported:new Date().toISOString(),packs:S.packs.map(p=>({id:p.id,title:p.title,sample:!!p.sample,ts:p.ts||0,questions:p.questions.map(canonicalQuestion)})),progress,test_history:readTestHistory(),...(quotes?{quotes}:{}),...(mapping?{mapping}:{})});
+}
+function normalizeMappingBackup(value){
+  if(!plainObject(value))throw Error("Invalid mapping backup.");
+  const history={},edits={};
+  for(const [id,p] of Object.entries(value.history||{})){if(!safeKey(id)||!plainObject(p))continue;history[id]=Object.fromEntries(['seen','correct','review','last'].map(k=>[k,Number.isFinite(p[k])&&p[k]>=0?p[k]:0]));}
+  for(const [id,p] of Object.entries(value.edits||{})){if(!safeKey(id)||!plainObject(p))continue;edits[id]=Object.fromEntries(Object.entries(p).filter(([k,v])=>['name','capital','note','source','mouth','route','region'].includes(k)&&typeof v==='string').map(([k,v])=>[k,v.slice(0,k==='note'?8000:2000)]));}
+  const mapSettings={};for(const k of ['latitudes','stateBorders','indiaCountryBorders','worldBorders'])if(typeof value.mapSettings?.[k]==='boolean')mapSettings[k]=value.mapSettings[k];
+  if(Number.isFinite(value.mapSettings?.sidebarWidth))mapSettings.sidebarWidth=Math.max(160,Math.min(640,value.mapSettings.sidebarWidth));
+  return {theme:value.theme==='light'?'light':'dark',history,edits,mapSettings};
 }
 function buildAnalysis(){
   const cell=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
@@ -1748,50 +1961,62 @@ function saveFile(name,text,type){
 function parseBackup(text){
   let d;try{d=JSON.parse(text);}catch(e){return {error:"This is not valid JSON."};}
   if(!d||d.schema!=="recall-desk-backup/1"||!Array.isArray(d.packs))return {error:"This is not a Recall Desk backup file."};
-  const packs=[];
+  const packs=[],ids=new Set();
   for(const p of d.packs){
-    if(!p||!p.id||!Array.isArray(p.questions))continue;
-    const qs=p.questions.filter(q=>q&&Number.isInteger(q.no)&&q.text&&q.options&&acceptedAnswers(q).length&&acceptedAnswers(q).every(L=>q.options[L]));
-    if(qs.length)packs.push({id:String(p.id),title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs.map(canonicalQuestion)});
+    if(!p||typeof p.id!=="string"||!p.id||p.id.length>200||!safeKey(p.id)||ids.has(p.id)||!Array.isArray(p.questions))return {error:"The backup contains an invalid or repeated set ID."};
+    ids.add(p.id);const qs=p.questions.map(storedQuestion),nos=new Set(qs.filter(Boolean).map(q=>q.no));
+    if(qs.some(q=>!q)||nos.size!==qs.length)return {error:"Invalid questions in "+String(p.title||p.id)+". Restore was stopped before changing your data."};
+    if(qs.length)packs.push({id:p.id,title:String(p.title||p.id),sample:!!p.sample,ts:Number(p.ts)||0,questions:qs});
   }
   if(!packs.length)return {error:"No question sets were found in this backup."};
-  return {packs,progress:d.progress&&typeof d.progress==="object"?d.progress:{},testHistory:normalizeTestHistory(d.test_history),exported:d.exported||""};
+  const progress={};for(const p of packs){progress[p.id]={};for(const q of p.questions){const value=d.progress?.[p.id]?.[q.no];if(value)progress[p.id][q.no]=cleanProgress(value);}}
+  try{return {packs,progress,testHistory:normalizeTestHistory(d.test_history),exported:d.exported||"",...(Object.hasOwn(d,'quotes')?{quotes:parseQuoteJson(JSON.stringify(d.quotes))}:{}),...(Object.hasOwn(d,'mapping')?{mapping:normalizeMappingBackup(d.mapping)}:{})};}catch(error){return {error:error.message};}
 }
 async function restoreBackup(){
-  const b=S.bk.parsed;if(!b)return;
+  const b=S.bk.parsed;if(!b||S.restoring)return;
+  const context=bankContext(),token={};S.restoring=token;
+  try{
+  await flush();assertBank(context);
   for(const p of b.packs){
     const old=S.packs.find(x=>x.id===p.id),oldChunks=old?old.chunks:0;
     const pack={...p,chunks:oldChunks};
     await enqueue(()=>S.store.savePack(pack,oldChunks));
+    assertBank(context);
     S.packs=S.packs.filter(x=>x.id!==p.id).concat(pack);
     rebuild();
     const items=b.progress[p.id]||{};
     // A restored set gets exactly the backup's progress, including an empty record.
     for(const uid of Object.keys(S.prog))if(uid.slice(0,uid.lastIndexOf(":"))===p.id)delete S.prog[uid];
     for(const q of pack.questions)if(Object.hasOwn(items,q.no))S.prog[p.id+":"+q.no]=items[q.no];
-    queueSave(p.id);
+    queueSave(p.id,true);
   }
-  await flush();
+  await flush();assertBank(context);
   for(const record of b.testHistory||[])recordTestResult(record);
   await TEST_HISTORY.chain;
+  assertBank(context);
+  if(b.quotes){await persistQuoteCollection(b.quotes);assertBank(context);}
+  if(b.mapping){const old=(()=>{try{return normalizeMappingBackup(JSON.parse(localStorage.getItem('solo-ui-lab-rivers-v1')||'{}'));}catch(error){return normalizeMappingBackup({});}})();localStorage.setItem('solo-ui-lab-rivers-v1',JSON.stringify({...b.mapping,history:{...old.history,...b.mapping.history},edits:{...old.edits,...b.mapping.edits}}));}
   const n=b.packs.reduce((a,p)=>a+p.questions.length,0);
   S.bk={parsed:null,error:""};toast("Restored "+b.packs.length+" set"+(b.packs.length===1?"":"s")+", "+n+" questions");render();
+  }finally{if(S.restoring===token)S.restoring=false;}
 }
 function backupCard(){
   const b=S.bk.parsed,n=b?b.packs.reduce((a,p)=>a+p.questions.length,0):0,pn=b?Object.values(b.progress).reduce((a,o)=>a+Object.keys(o||{}).length,0):0;
   return `<section class="card"><h2>Backup and restore</h2>
-  <p class="muted">Save all your question sets and your progress (mistakes, bookmarks, attempts) to one file, and load it back any time, even in a new account.</p>
+  <p class="muted">Save your question sets, progress, quotes and this browser’s mapping notes and progress to one file, and load it back any time, even in a new account.</p>
   <div class="row">${CONFIG.requireLogin?`<button class="btn pri" data-act="bkdl" ${S.packs.length?"":"disabled"}>Download backup</button>`:""}<button class="btn${CONFIG.requireLogin?"":" pri"}" data-act="bkcopy" ${S.packs.length?"":"disabled"}>Copy backup</button></div>
   <p class="hint">${CONFIG.requireLogin?"If your browser blocks the download, use Copy backup and paste it into a text file.":"Copy the backup and paste it into a text file. Restore reads that file back."}</p>
   <div class="field" style="gap:8px"><span class="label">For analysis</span><p class="muted" style="font-size:14px">A small progress-only file (no question text) that you can paste or attach in a chat to get a review of your patterns.</p><div class="row">${CONFIG.requireLogin?`<button class="btn pri" data-act="andl" ${S.packs.length?"":"disabled"}>Download analysis file</button>`:""}<button class="btn${CONFIG.requireLogin?"":" pri"}" data-act="ancopy" ${S.packs.length?"":"disabled"}>Copy for analysis</button></div></div>
   <div class="field"><label class="label" for="bkfile">Restore from a backup file</label><input type="file" id="bkfile" accept=".json,application/json,.txt"></div>
   ${S.bk.error?`<p class="note bad">${esc(S.bk.error)}</p>`:""}
-  ${b?`<div class="field"><p>${b.packs.length} set${b.packs.length===1?"":"s"} \u00b7 ${n} questions \u00b7 progress on ${pn} questions${b.exported?` \u00b7 saved ${esc(String(b.exported).slice(0,10))}`:""}</p><p class="hint">Sets with the same id are replaced along with their progress. Your other sets stay as they are.</p><div class="row"><button class="btn pri" data-act="bkrestore">Restore</button></div></div>`:""}</section>`;
+  ${b?`<div class="field"><p>${b.packs.length} set${b.packs.length===1?"":"s"} \u00b7 ${n} questions \u00b7 progress on ${pn} questions${b.exported?` \u00b7 saved ${esc(String(b.exported).slice(0,10))}`:""}</p><p class="hint">Sets with the same id are replaced along with their progress. Included quotes replace your collection; mapping entries are merged. Backups without quotes or mapping leave those untouched.</p><div class="row"><button class="btn pri" data-act="bkrestore">Restore</button></div></div>`:""}</section>`;
 }
 
 /* ---------- actions ---------- */
 function recordAnswer(uid,pick,o){
   o=o||{};
+  const operationId=quizEventId(uid,'answer'),existing=PROGRESS.ops.get(operationId)?.changes.find(c=>c.no===String(S.byUid.get(uid)?.no));
+  if(existing){const p=getP(uid);return {ok:isAcceptedAnswer(S.byUid.get(uid),pick),cleared:false,wasM:!!existing.before?.m,days:(p.cd||[]).length,slow:!!p.sl,attemptType:existing.before?.a||existing.before?.sk?'repeat':'first'};}
   const q=S.byUid.get(uid),p=getP(uid),ok=isAcceptedAnswer(q,pick),wasM=!!p.m,td=dayKey();let cleared=false,days=0;
   const attemptType=trackAttempt(p,{pick,ok,cf:o.cf,reason:o.reason});
   p.a++;p.t=Date.now();p.cf=o.cf||"";
@@ -1811,19 +2036,21 @@ function recordAnswer(uid,pick,o){
     p.w++;p.l="w";p.m=1;p.x=pick;p.bx=1;p.dd=addDays(td,1);p.cd=[];p.wy="";
     if(p.cf==="s")p.cw=(p.cw||0)+1;
   }
-  markDailyReview(uid);queueSave(q.packId);return {ok,cleared,wasM,days,slow:!!p.sl,attemptType};
+  markDailyReview(uid);queueSave(q.packId,false,operationId);return {ok,cleared,wasM,days,slow:!!p.sl,attemptType};
 }
 function recordSkip(uid){
+  const operationId=quizEventId(uid,'skip'),existing=PROGRESS.ops.get(operationId)?.changes.find(c=>c.no===String(S.byUid.get(uid)?.no));if(existing)return existing.before?.a||existing.before?.sk?'repeat':'first';
   const q=S.byUid.get(uid),p=getP(uid);
   const attemptType=trackAttempt(p,{skipped:true,reason:S.quiz?.rn?.[uid]||""});
-  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];markDailyReview(uid);queueSave(q.packId);return attemptType;
+  p.sk=(p.sk||0)+1;p.m=1;p.t=Date.now();p.bx=1;p.dd=addDays(dayKey(p.t),1);p.cd=[];markDailyReview(uid);queueSave(q.packId,false,operationId);return attemptType;
 }
+function quizEventId(uid,kind){const Q=S.quiz;if(!Q||Q.done||!Q.id)return '';Q.events=Q.events||{};const key=uid+':'+kind;if(!Q.events[key]){Q.events[key]=progressId();saveQuizSession();}return Q.events[key];}
 function startQuiz(uids,o){
   DASH.open=false;
   S.confirmFin=false;S.confirmExit=false;
   if(!uids.length)return;
   o=o||{};
-  S.quiz={uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},rn:{},marked:{},tm:{},t0:Date.now(),done:false,elapsed:0};
+  S.quiz={id:progressId(),space:S.space,uids,rv:null,i:0,mode:o.mode||"practice",kind:o.kind||"Quiz",label:o.label||"Mixed",start:Date.now(),ans:{},res:{},sel:{},skp:{},cf:{},rn:{},marked:{},tm:{},t0:Date.now(),done:false,elapsed:0,scoring:Object.fromEntries(uids.map(u=>[u,{...markingFor(S.byUid.get(u))}]))};
   S.tab="practice";S.mdText="";render();window.scrollTo(0,0);
 }
 function doPick(L){
@@ -1870,6 +2097,7 @@ function doSkip(){
 function finishQuiz(){
   const Q=S.quiz;if(!Q||Q.done)return;
   tickQ();
+  Q.submitting=true;saveQuizSession();
   for(const u of Q.uids){
     if(Q.mode==="exam"){
       const pick=Q.ans[u];
@@ -1877,8 +2105,9 @@ function finishQuiz(){
       else{const attemptType=recordSkip(u);Q.res[u]={skipped:true,ok:false,attemptType,reason:Q.rn[u]||""};}
     }else if(!Q.res[u]&&Q.kind==="Daily revision"){Q.res[u]={skipped:true,ok:false,deferred:true};}
     else if(!Q.res[u]){const attemptType=recordSkip(u);Q.res[u]={skipped:true,ok:false,attemptType,reason:Q.rn[u]||""};}
+    saveQuizSession();
   }
-  Q.done=true;Q.elapsed=Date.now()-Q.start;flushInBackground();
+  Q.done=true;Q.submitting=false;Q.completedAt=Date.now();Q.elapsed=(Q.elapsedBase||0)+Date.now()-(Q.resumeClock||Q.start);saveQuizSession();flushInBackground();
   const cl=Q.uids.filter(u=>Q.res[u].cleared).length;
   if(cl&&Q.mode==="exam")toast("Cleared "+cl+" from your Notebook");
   render();window.scrollTo(0,0);
@@ -1888,33 +2117,38 @@ function sameQuestion(a,b){
   return identity(a)===identity(b);
 }
 async function addPack(parsed,sample){
+  const context=bankContext();await flush();assertBank(context);
   const old=S.packs.find(p=>p.id===parsed.id);
   const pack={id:parsed.id,title:parsed.title,sample:!!sample,ts:Date.now(),questions:parsed.questions,chunks:old?old.chunks:0};
   const oldChunks=old?old.chunks:0;
   await enqueue(()=>S.store.savePack(pack,oldChunks));
+  assertBank(context);
   S.packs=S.packs.filter(p=>p.id!==pack.id).concat(pack);
   rebuild();
   if(old){
     const previous=new Map(old.questions.map(q=>[q.no,q]));
     const unchanged=new Set(pack.questions.filter(q=>previous.has(q.no)&&sameQuestion(previous.get(q.no),q)).map(q=>pack.id+":"+q.no));
     for(const uid of Object.keys(S.prog))if(uid.slice(0,uid.lastIndexOf(":"))===pack.id&&!unchanged.has(uid))delete S.prog[uid];
-    queueSave(pack.id);await flush();
+    queueSave(pack.id,true);await flush();
   }
   return pack;
 }
 async function removeQuestion(uid){
+  const context=bankContext();await flush();assertBank(context);
   const q=S.byUid.get(uid);if(!q)return;
   const p=S.packs.find(x=>x.id===q.packId);if(!p)return;
   const oldChunks=p.chunks||1,updated={...p,questions:p.questions.filter(x=>x.no!==q.no)};
   if(!updated.questions.length)await enqueue(()=>S.store.deletePack(p));
   else await enqueue(()=>S.store.savePack(updated,oldChunks));
+  assertBank(context);
   delete S.prog[uid];
   S.packs=updated.questions.length?S.packs.map(x=>x===p?updated:x):S.packs.filter(x=>x!==p);
   rebuild();if(updated.questions.length)queueSave(p.id);
 }
 async function applyImport(attempt){
   const r=S.imp.parsed;if(!r||!r.questions.length||S.importing)return;
-  S.importing=true;
+  const context=bankContext(),space=S.space,mode=S.newMode,tab=S.tab,view=S.view,token={};
+  S.importing=token;
   try{
   const dups=S.imp.dups||[],drop=new Set(),del=new Set();
   for(const d of dups){if(d.choice==="old")drop.add(d.no);else if(d.choice==="new")del.add(d.old.uid);}
@@ -1925,19 +2159,25 @@ async function applyImport(attempt){
   // Persist the replacement before removing any originals. Same-set originals
   // have already been replaced by addPack and must not delete the new questions.
   const pack=await addPack({id:r.id,title:(S.imp.name||"").trim()||r.title,questions:qs},false);
+  assertBank(context);
   for(const uid of del)if(uid.slice(0,uid.lastIndexOf(":"))!==pack.id)await removeQuestion(uid);
   await flush();
+  assertBank(context);
+  if(S.space!==space||S.tab!==tab||S.view!==view||S.imp.parsed!==r||S.quiz&&!S.quiz.done){toast(qs.length+" questions added to "+SPACES[space].label);return;}
   S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};
   const uids=pack.questions.map(q=>pack.id+":"+q.no);
-  if(attempt){toast(qs.length+" questions added");startQuiz(uids,{mode:S.newMode,kind:"New import",label:pack.title});}
+  if(attempt){toast(qs.length+" questions added");startQuiz(uids,{mode,kind:"New import",label:pack.title});}
   else{toast(qs.length+" questions added"+(del.size?", "+del.size+" older replaced":""));S.tab="practice";S.view="home";render();}
-  }finally{S.importing=false;}
+  }finally{if(S.importing===token)S.importing=false;}
 }
 document.addEventListener("click",async e=>{
   const el=e.target.closest("[data-act]");if(!el)return;
   const a=el.dataset.act,v=el.dataset.v,sel=S.view==="smart"?S.smart:S.sel;
   try{
   switch(a){
+    case "sync-retry":await flush();if(TEST_HISTORY.remote)await loadTestHistory(S.store,S.storage);toast("Sync retried");render();break;
+    case "resume-quiz":resumeQuiz(v);break;
+    case "discard-quiz":discardQuizDraft(v);render();break;
     case "retrybank":if(S.bankRetry)await openBank(S.bankRetry.store,S.bankRetry.mode);break;
     case "tab":if(v==="heat"){openSwot(S.space,true);break;}DASH.open=false;S.tab=v;if(v!=="practice")S.view="home";if(v==="notebook"&&el.dataset.quizdone)S.nb.subject=undefined;if(v!=="practice"&&S.quiz&&S.quiz.done&&el.dataset.quizdone)S.quiz=null;S.mdText="";render();window.scrollTo(0,0);break;
     case "startwiz":S.view="wiz";S.step=1;S.quiz=null;render();window.scrollTo(0,0);break;
@@ -2019,8 +2259,8 @@ document.addEventListener("click",async e=>{
     case "mchg":S.editMonth=v;render();break;
     case "mno":S.editMonth=null;render();break;
     case "msave":{const x=document.getElementById("mchgin"),p=S.packs.find(z=>z.id===v);if(!x||!p||!okMonth(x.value)){toast("Pick a valid month and year");break;}
-      const month=x.value,old=p.chunks||1,updated={...p,questions:p.questions.map(q=>({...q,mo:month}))};
-      await enqueue(()=>S.store.savePack(updated,old));S.packs=S.packs.map(z=>z===p?updated:z);S.editMonth=null;rebuild();render();toast("Month set to "+monthLabel(month));break;}
+      const context=bankContext(),month=x.value,old=p.chunks||1,updated={...p,questions:p.questions.map(q=>({...q,mo:month}))};
+      await enqueue(()=>S.store.savePack(updated,old));assertBank(context);S.packs=S.packs.map(z=>z===p?updated:z);S.editMonth=null;rebuild();render();toast("Month set to "+monthLabel(month));break;}
     case "heatall":S.heatAll=!S.heatAll;render();break;
     case "heat":{const s=el.dataset.s,t=el.dataset.t;sel.subjects=new Set([s]);sel.topics=t?new Set([topicKey(s,t)]):new Set();sel.which="prio";sel.pack="all";S.quiz=null;S.tab="practice";S.view="wiz";S.step=2;render();window.scrollTo(0,0);break;}
     case "copymd":{const md=mdFor(openMistakes());try{await navigator.clipboard.writeText(md);S.mdText="";toast("Mistakes copied as markdown");}catch(err){S.mdText=md;render();toast("Select the text and copy it");}break;}
@@ -2045,13 +2285,13 @@ document.addEventListener("click",async e=>{
     case "authgo":await authGo();break;
     case "magic":await authMagic();break;
     case "google":{const r=await S.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:authBack()}});if(r.error){S.authMsg={text:r.error.message,bad:1};render();}break;}
-    case "signout":await flush();await chain;await S.sb.auth.signOut();break;
+    case "signout":{const context=bankContext();saveQuizSession();await flush();await chain;assertBank(context);await S.sb.auth.signOut();break;}
     case "del":S.confirmDel=v;render();{const x=document.getElementById("delin");if(x)x.focus();}break;
     case "delno":S.confirmDel=null;render();break;
     case "delgo":{
       const x=document.getElementById("delin");if(!x||x.value.trim().toLowerCase()!=="delete")break;
-      const p=S.packs.find(z=>z.id===v);if(!p)break;
-      await enqueue(()=>S.store.deletePack(p));S.confirmDel=null;
+      const p=S.packs.find(z=>z.id===v);if(!p)break;const context=bankContext();await flush();assertBank(context);
+      await enqueue(()=>S.store.deletePack(p));assertBank(context);S.confirmDel=null;
       S.packs=S.packs.filter(z=>z.id!==v);for(const k of Object.keys(S.prog))if(k.startsWith(v+":"))delete S.prog[k];
       rebuild();render();toast("\""+p.title+"\" deleted");break;}
   }
@@ -2087,7 +2327,7 @@ document.addEventListener("keydown",e=>{
   if(!Q||Q.done||S.tab!=="practice")return;
   if(S.confirmFin){if(e.key==="Escape"){S.confirmFin=false;render();}return;}
   if(S.confirmExit){if(e.key==="Escape"){ROUTES.pending=null;S.confirmExit=false;render();}return;}
-  const tag=(e.target&&e.target.tagName)||"";if(tag==="TEXTAREA"||tag==="INPUT"||tag==="SELECT"||e.metaKey||e.ctrlKey||e.altKey)return;
+  const tag=(e.target&&e.target.tagName)||"";if(["TEXTAREA","INPUT","SELECT","BUTTON","A"].includes(tag)||e.target?.isContentEditable||e.metaKey||e.ctrlKey||e.altKey)return;
   const q=S.byUid.get(Q.uids[Q.i]),k=e.key.toUpperCase(),r=Q.res[Q.uids[Q.i]],locked=Q.mode!=="exam"&&r&&!r.skipped;
   let L=null;if(/^[A-F]$/.test(k))L=k;else if(/^[1-6]$/.test(k))L="ABCDEF"[Number(k)-1];
   if(L&&q.options[L]&&!locked){doPick(L);e.preventDefault();return;}
@@ -2100,18 +2340,26 @@ document.addEventListener("keydown",e=>{
 /* ---------- boot ---------- */
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("Could not load "+src));document.head.appendChild(s);});}
 async function openBank(store,mode){
+  saveQuizSession();S.quiz=null;
+  const generation=++bankGeneration;clearTimeout(saveTimer);saveSet=new Set();resetProgressSession();
   S.store=null;S.storage=mode;S.ready=false;S.bankError="";S.bankRetry={store,mode};render();
   try{
-    const d=await store.load();S.packs=d.packs.map(canonicalPack);rebuild();applyProg(d.prog);
-    S.store=store;S.ready=true;S.bankRetry=null;
+    const d=await store.load();if(generation!==bankGeneration)return;
+    S.packs=d.packs.map(canonicalPack);rebuild();applyProg(d.prog);S.store=store;
+    await loadProgressSession(store,d.prog);if(generation!==bankGeneration)return;
+    S.ready=true;S.bankRetry=null;
     const quotesReady=loadStoredQuotes(store,mode),testsReady=loadTestHistory(store,mode);render();await Promise.all([quotesReady,testsReady]);
+    if(generation!==bankGeneration)return;
+    loadQuizSessions();
+    if(PROGRESS.ops.size)flushInBackground();
   }catch(e){
+    if(generation!==bankGeneration)return;
     S.bankError="Could not load your "+(mode==="cloud"||mode==="account"?"account":"browser")+" data: "+((e&&e.message)||"unknown error");
   }
   render();
 }
 async function startCloud(user){
-  if(S.user?.id!==user.id)resetQuoteSession();
+  if(S.user?.id!==user.id)resetData();
   S.user=user;S.auth="ok";S.authMsg=null;S.ready=false;render();
   await openBank(supaBackend(S.sb,user.id),"cloud");
 }
@@ -2255,7 +2503,7 @@ function dashMixedTable(){
 /* Completed tests are append-only snapshots, separate from per-question progress. */
 const TEST_HISTORY_KEY=LOCAL_PREVIEW?"solo-test-history-preview-v1":"solo-test-history-v1";
 const TEST_HISTORY={owner:"",rows:[],pending:new Set(),state:"idle",error:"",generation:0,store:null,remote:false,chain:Promise.resolve()};
-const testMarks=(correct,incorrect)=>Math.round((correct*2-incorrect*.66)*100)/100;
+const testMarks=(correct,incorrect)=>roundMarks(correct*MARKING.static.right-incorrect*MARKING.static.wrong);
 const testDate=(t,full=false)=>Number.isFinite(t)&&t>0?new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short",...(full?{year:"numeric"}:{})}):"Date unavailable";
 function normalizeTestResult(row){
   if(!row||row.demo||typeof row.id!=="string"||!row.id||row.id.length>200||![50,100].includes(row.total)||!Object.hasOwn(SPACES,row.space)||!Number.isFinite(row.date)||!Number.isFinite(new Date(row.date).getTime())||!["exam","practice"].includes(row.mode)||![row.correct,row.incorrect,row.skipped].every(n=>Number.isInteger(n)&&n>=0)||row.correct+row.incorrect+row.skipped!==row.total||row.marks!==testMarks(row.correct,row.incorrect)||row.maxMarks!==row.total*2)return null;
@@ -2405,13 +2653,13 @@ function saveCompletedTest(Q){
   const results=Q.uids.map(uid=>Q.res[uid]);
   if(results.some(r=>!r||r.deferred))return false;
   const correct=results.filter(r=>r.ok&&!r.skipped).length,skipped=results.filter(r=>r.skipped).length,incorrect=results.length-correct-skipped;
-  const qs=Q.uids.map(uid=>S.byUid.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Date.now();
-  const record={id:`${S.space}:${Q.start}:${date}`,date,total:Q.uids.length,space:S.space,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
+  const qs=Q.uids.map(uid=>S.byUid.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Q.completedAt||Date.now();
+  const record={id:`${S.space}:${Q.id||Q.start}:${date}`,date,total:Q.uids.length,space:S.space,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
   const paperId=completedStaticPaperId(Q.uids);if(paperId)record.paperId=paperId;
   const added=recordTestResult(record);Q.progressSaved=true;return added;
 }
 const finishQuizBeforeProgress=finishQuiz;
-finishQuiz=function(){const Q=S.quiz,wasDone=Q?.done;finishQuizBeforeProgress();if(!wasDone&&Q?.done)saveCompletedTest(Q);};
+finishQuiz=function(){const Q=S.quiz,wasDone=Q?.done;finishQuizBeforeProgress();if(!wasDone&&Q?.done){saveCompletedTest(Q);const eligible=S.space==="static"&&[50,100].includes(Q.uids.length)&&Q.kind!=="Daily revision";if(!eligible||(TEST_HISTORY.state!=="error"&&(!TEST_HISTORY.pending.size||cacheTestHistory()))){Q.draftFinalized=true;discardQuizDraft(Q.id);}else saveQuizSession();}};
 function dashProgressChart(){
   if(DASH.scope!=="static")return "";
   const {rows,subjects,missingSubjects,legacyCount}=progressHistory(),total=DASH.testLength,max=DASH.testSubject?Math.max(10,Math.ceil(Math.max(0,...rows.map(row=>row.maxMarks))/10)*10):total*2,width=Math.max(900,rows.length*26+110),height=310,left=58,right=28,top=24,bottom=48;
@@ -2475,7 +2723,7 @@ render=function(){
   }
   document.documentElement.setAttribute("data-dashboard","true");
   document.documentElement.setAttribute("data-space",DASH.scope);document.documentElement.setAttribute("data-theme",S.theme);
-  const keep=window.scrollY;app.innerHTML=header().replace(/<nav class="tabs ui-tabs"[\s\S]*?<\/nav>/,'<div class="swot-header-caption"><span>Dashboard / Learning analysis</span><span>Your learning dashboard</span></div>')+viewSwot();window.scrollTo(0,keep);
+  const keep=window.scrollY;app.innerHTML=header().replace(/<nav class="tabs ui-tabs"[\s\S]*?<\/nav>/,'<div class="swot-header-caption"><span>Dashboard / Learning analysis</span><span>Your learning dashboard</span></div>')+resumeCard()+viewSwot();window.scrollTo(0,keep);
 };
 document.addEventListener("submit",event=>{if(event.target.id!=="swot-search-form")return;event.preventDefault();DASH.query=document.getElementById("swot-topic-search").value;DASH.detail=null;render();document.getElementById("swot-heatmap")?.scrollIntoView({block:"start"});});
 document.addEventListener("toggle",event=>{const key=event.target.dataset?.dashGroup;if(key)DASH.heatOpen[key]=event.target.open;if(event.target.classList?.contains("swot-more-insights"))DASH.insightsOpen=event.target.open;},true);
@@ -2528,6 +2776,7 @@ function authReturnUrl(){
   return /(?:^#|&)(?:access_token|refresh_token|error|error_code|error_description|token_type)=/.test(location.hash||"")||new URLSearchParams(location.search||"").has("code");
 }
 function resetPracticeSpace(space){
+  saveQuizSession();
   DASH.open=false;flushInBackground();S.space=space;try{localStorage.setItem("rd_space",space);}catch(error){}
   S.quiz=null;S.tab="practice";S.view="home";S.step=1;S.sel.subjects=new Set();S.sel.topics=new Set();S.sel.pack="all";S.sel.sourceExam="";S.pyqSource={sourceExam:""};S.sel.months=new Set();S.nb.subject="";S.editMonth=null;S.confirmDel=null;S.mdText="";
   S.imp={parsed:null,errors:[],text:"",dups:[],name:"",month:"",idMode:""};rebuild();
@@ -2627,13 +2876,13 @@ function initRoutes(){
   if(window.history&&"scrollRestoration" in window.history)window.history.scrollRestoration="manual";
   window.addEventListener?.("popstate",browserPageChanged);
   window.addEventListener?.("hashchange",browserPageChanged);
-  window.addEventListener?.("beforeunload",event=>{if(S.quiz&&!S.quiz.done){event.preventDefault();event.returnValue="";}});
+  window.addEventListener?.("beforeunload",event=>{if(S.quiz&&!S.quiz.done||PROGRESS.cacheError&&PROGRESS.ops.size||QUIZ_DRAFTS.error){saveQuizSession();event.preventDefault();event.returnValue="";}});
   if(authReturnUrl()){ROUTES.waiting=true;return;}
   const page=parsePageRoute(location.hash)||parsePageRoute("#/dashboard");
   applyPageRoute(page);ROUTES.current=page.hash;writePageUrl(page,true);routePageTitle(page);
 }
 const pageNavigationRender=render;
-render=function(){syncPageRoute();return pageNavigationRender();};
+render=function(){saveQuizSession();if(S.ready&&!S.quiz&&QUIZ_DRAFTS.dirty)loadQuizSessions();syncPageRoute();return pageNavigationRender();};
 
 render();
 (async function boot(){
