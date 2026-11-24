@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const test = require('node:test');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
+const source = fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
 new vm.Script(source);
 function app() {
   const events={};

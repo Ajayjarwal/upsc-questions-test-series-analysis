@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.cjs",
-    "check": "node --check js/app.js && node --check mapping/app.js"
+    "check": "node --check js/mapping-storage.js && node --check js/app.js && node --check mapping/app.js"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.6.0"

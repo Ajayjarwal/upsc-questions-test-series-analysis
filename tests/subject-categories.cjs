@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const script=fs.readFileSync(__dirname+'/../js/app.js','utf8');
+const script=fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(__dirname+'/../js/app.js','utf8');
 function fixture(){
  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',textContent:'',open:false,setAttribute(){},focus(){},querySelector(){return null;},querySelectorAll(){return [];},close(){},addEventListener(){}});return nodes.get(id);};
  const context=vm.createContext({TextEncoder,URL,URLSearchParams,structuredClone,location:{hostname:'localhost',search:''},setTimeout:()=>0,clearTimeout(){},localStorage:{getItem(){return null;},setItem(){}},document:{getElementById:node,querySelector:()=>null,documentElement:{setAttribute(){}},body:{classList:{remove(){}}},addEventListener(){}},window:{scrollTo(){},matchMedia:()=>({matches:false})}});

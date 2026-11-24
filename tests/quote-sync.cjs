@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
-const script=fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
+const script=fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
 const core=script.slice(0,script.lastIndexOf('\nrender();'));
 const quotes=text=>[{text,author:'Author'}];
 

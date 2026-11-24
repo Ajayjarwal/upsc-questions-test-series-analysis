@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const script=fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8'),core=script.slice(0,script.lastIndexOf('\nrender();'));
+const script=fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8'),core=script.slice(0,script.lastIndexOf('\nrender();'));
 let sequence=0;
 const paper=()=>({id:'paper',title:'A saved paper',questions:[1,2].map(no=>({no,subject:'Geography',topic:'Rivers',text:'Question '+no,options:{A:'Yes',B:'No'},answer:'A'}))});
 function fixture(storage=new Map()){
@@ -77,4 +77,49 @@ test('switching study sections while importing finishes the save without startin
 });
 test('question search reuses its index and rebuilds it after a question edit',async()=>{
   const f=fixture(),cloud=remote(f.run('mergeProgress'));await f.open(cloud.store('alice'));assert.equal(f.run(`(()=>{S.space='cse';S.packs=[{id:'cse::paper',questions:[{...S.packs[0].questions[0],text:'Federalism in India'}]}];rebuild();const a=indexedQuestions();if(searchQuestions('federalism').length!==1||indexedQuestions()!==a)return false;S.packs[0].questions[0].text='A river';rebuild();return indexedQuestions()!==a&&searchQuestions('federalism').length===0})()`),true);
+});
+
+test('changed pending questions are held out of new questions and do not block another paper',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress'));cloud.bank('alice').packs.push({...paper(),id:'other'});await a.open(cloud.store('alice'));cloud.fail.write=true;a.run("recordAnswer('paper:1','A')");await assert.rejects(a.run('flush()'));cloud.fail.write=false;cloud.bank('alice').packs[0].questions[0].text='Replacement question';
+  const b=fixture(a.storage);await b.open(cloud.store('alice'));assert.equal(b.run("S.prog['paper:1']"),undefined);assert.equal(b.run('PROGRESS.conflicts.size'),1);assert.match(b.run('progressRecoveryCard()'),/Export recovery file/);
+  b.run("recordAnswer('other:1','A')");await b.run('flush()');assert.equal(cloud.bank('alice').prog.other['1'].a,1);assert.equal(b.run('PROGRESS.ops.size'),0);
+  const c=fixture(a.storage);await c.open(cloud.store('alice'));assert.equal(c.run('PROGRESS.conflicts.size'),1);assert.equal(c.run("[...PROGRESS.conflicts.values()][0].changes[0].identity.text"),'Question 1');
+});
+test('a permanent server rejection keeps recovery evidence and continues unrelated queued answers',async()=>{
+  const f=fixture(),cloud=remote(f.run('mergeProgress')),store=cloud.store('alice'),save=store.saveProgressChanges;cloud.bank('alice').packs.push({...paper(),id:'other'});store.saveProgressChanges=(op,ids)=>op.pid==='paper'?Promise.reject(Error('A question changed. Keep a backup before retrying.')):save(op,ids);await f.open(store);
+  f.run("recordAnswer('paper:1','A');recordAnswer('other:1','B')");await f.run('flush()');assert.equal(f.run('PROGRESS.conflicts.size'),1);assert.equal(cloud.bank('alice').prog.other['1'].w,1);assert.equal(f.run('PROGRESS.ops.size'),0);
+});
+test('receipts arriving between bank reads refresh progress before retiring the local operation',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress'));await a.open(cloud.store('alice'));a.run("recordAnswer('paper:1','A')");const store=cloud.store('alice'),receipts=store.loadProgressReceipts;store.loadProgressReceipts=async ids=>{await a.run('flush()');return receipts(ids);};const b=fixture(a.storage);await b.open(store);assert.equal(b.run("S.prog['paper:1'].a"),1);assert.equal(b.run('PROGRESS.ops.size'),0);
+});
+test('a failed reconciliation refresh does not delete the only local evidence of a saved answer',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress'));await a.open(cloud.store('alice'));cloud.fail.afterCommit=true;a.run("recordAnswer('paper:1','A')");await assert.rejects(a.run('flush()'));const store=cloud.store('alice'),load=store.load;let calls=0;store.load=()=>++calls>1?Promise.reject(Error('offline refresh')):load();const b=fixture(a.storage);await b.open(store);assert.match(b.run('S.bankError'),/offline refresh/);assert.equal(b.run("readProgressOperations('cloud:alice').length"),1);
+});
+test('resuming a draft transfers ownership and the previous tab cannot submit or overwrite it',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress'));await a.open(cloud.store('alice'));a.run("startQuiz(['paper:1','paper:2'],{mode:'exam'});doPick('A');saveQuizSession()");const b=fixture(a.storage);await b.open(cloud.store('alice'));b.run('resumeQuiz(QUIZ_DRAFTS.rows[0].quiz.id)');a.run("doPick('B');finishQuiz();saveQuizSession()");assert.equal(a.run('S.quiz.done'),false);assert.equal(a.run("S.quiz.ans['paper:1']"),'A');assert.equal(a.run('PROGRESS.ops.size'),0);b.run('finishQuiz()');await b.run('flush()');assert.equal(cloud.bank('alice').prog.paper['1'].a,1);assert.equal(cloud.bank('alice').prog.paper['2'].sk,1);a.run('finishQuiz()');assert.equal(a.run('S.quiz.done'),false);
+});
+test('even copies without browser coordination use one immutable submission and question event ID',async()=>{
+  const a=fixture(),b=fixture(),cloud=remote(a.run('mergeProgress')),base=paper().questions[0];cloud.bank('alice').packs=[{id:'paper',title:'Full paper',questions:Array.from({length:50},(_,i)=>({...base,no:i+1}))}];await a.open(cloud.store('alice'));await b.open(cloud.store('alice'));a.run("startQuiz(S.qs.map(q=>q.uid),{mode:'exam'});for(const u of S.quiz.uids)S.quiz.ans[u]='A';saveQuizSession()");b.context.copy=JSON.parse(a.run('JSON.stringify(S.quiz)'));b.run('S.quiz=copy;claimQuiz(copy.id)');
+  a.run('finishQuiz()');await a.run('flush()');await a.run('TEST_HISTORY.chain');b.run('finishQuiz()');await b.run('flush()');await b.run('TEST_HISTORY.chain');assert.equal(cloud.bank('alice').history.length,1);assert.equal(cloud.bank('alice').prog.paper['1'].a,1);
+});
+test('new repeat sessions still count as separate tests and attempts',async()=>{
+  const f=fixture(),cloud=remote(f.run('mergeProgress')),base=paper().questions[0];cloud.bank('alice').packs=[{id:'paper',questions:Array.from({length:50},(_,i)=>({...base,no:i+1}))}];await f.open(cloud.store('alice'));
+  for(let i=0;i<2;i++){f.run("startQuiz(S.qs.map(q=>q.uid),{mode:'exam'});for(const u of S.quiz.uids)S.quiz.ans[u]='A';finishQuiz()");await f.run('flush()');await f.run('TEST_HISTORY.chain');}assert.equal(cloud.bank('alice').history.length,2);assert.equal(cloud.bank('alice').prog.paper['1'].a,2);
+});
+test('incomplete cloud collections block backups visibly and loading recovery restores export',async()=>{
+  const f=fixture(),cloud=remote(f.run('mergeProgress')),store=cloud.store('alice');cloud.bank('alice').quotes=[{text:'My saved quote',author:'Me'}];store.loadQuotes=async()=>{throw Error('unavailable');};store.loadTestResults=async()=>{throw Error('unavailable');};await f.open(store);
+  assert.throws(()=>f.run('buildBackup()'),/Backup unavailable.*quotes.*completed-test history/);assert.match(f.run('backupCard()'),/complete backup is unavailable/);await f.run('loadStoredQuotes(store, S.storage)').catch(()=>{});const good=cloud.store('alice');f.context.good=good;f.run('S.store=good');await f.run('loadStoredQuotes(good,S.storage)');await f.run('loadTestHistory(good,S.storage)');assert.equal(JSON.parse(f.run('buildBackup()')).quotes[0].text,'My saved quote');
+});
+test('a prior daily revision draft obeys today’s remaining allowance',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress')),base=paper().questions[0];cloud.bank('alice').packs=[{id:'paper',questions:Array.from({length:20},(_,i)=>({...base,no:i+1}))}];cloud.bank('alice').prog={paper:Object.fromEntries(Array.from({length:20},(_,i)=>[String(i+1),{a:1,c:0,w:1,m:1,t:1,dd:'2020-01-01'}]))};await a.open(cloud.store('alice'));a.run('startDailyReview();saveQuizSession()');const chosen=JSON.parse(a.run('JSON.stringify(S.quiz.uids)'));let marked=0;for(let no=1;no<=20;no++)if(!chosen.includes('paper:'+no)&&marked++<8)cloud.bank('alice').prog.paper[no].dr=a.run('dayKey()');const b=fixture(a.storage);await b.open(cloud.store('alice'));b.run('resumeQuiz(QUIZ_DRAFTS.rows[0].quiz.id)');assert.equal(b.run('S.quiz.uids.length'),2);b.run("for(const uid of S.quiz.uids){S.quiz.i=S.quiz.uids.indexOf(uid);doPick('A');doCheck();}finishQuiz()");await b.run('flush()');assert.equal(b.run('dailyPlan().done'),10);
+});
+test('a completed daily allowance cannot be bypassed by an old draft or an already-open queue',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress'));cloud.bank('alice').prog={paper:{1:{a:1,w:1,m:1,t:1,dd:'2020-01-01'}}};await a.open(cloud.store('alice'));a.run('startDailyReview();saveQuizSession()');a.run("S.prog['paper:1'].dr=dayKey();doPick('A');doCheck();doSkip()");assert.equal(a.run('S.quiz.res["paper:1"]'),undefined);a.run('const draftId=S.quiz.id;S.quiz=null;resumeQuiz(draftId)');assert.equal(a.run('S.quiz'),null);
+});
+
+test('complete backups retain held answers as recovery evidence and never apply them to replacement questions',async()=>{
+ const a=fixture(),cloud=remote(a.run('mergeProgress'));await a.open(cloud.store('alice'));cloud.fail.write=true;a.run("recordAnswer('paper:1','A')");await assert.rejects(a.run('flush()'));cloud.fail.write=false;cloud.bank('alice').packs[0].questions[0].text='New question';const b=fixture(a.storage);await b.open(cloud.store('alice'));const backup=JSON.parse(b.run('buildBackup()'));assert.equal(backup.answer_recovery[0].changes[0].identity.text,'Question 1');const c=fixture();await c.open(cloud.store('bob'),'bob');c.context.backup=JSON.stringify(backup);await c.run('S.bk.parsed=parseBackup(backup);restoreBackup()');assert.equal(c.run('PROGRESS.conflicts.size'),1);assert.equal(c.run("S.prog['paper:1']?.a||0"),0);
+});
+test('trimming a daily draft retains the original event slots to avoid collisions with earlier answers',async()=>{
+ const f=fixture(),cloud=remote(f.run('mergeProgress'));await f.open(cloud.store('alice'));f.run("startQuiz(['paper:1','paper:2'],{mode:'practice'});const first=quizEventId('paper:1','answer');S.quiz.uids=['paper:2'];const second=quizEventId('paper:2','answer');globalThis.slotIds=[first,second]");assert.notEqual(f.run('slotIds[0]'),f.run('slotIds[1]'));
 });

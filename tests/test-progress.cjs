@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
+const source=fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
 const core=source.slice(0,source.lastIndexOf('\nrender();'));
 const sample=(id='result-1')=>({id,date:1794708000000,total:50,space:'static',mode:'exam',correct:30,incorrect:15,skipped:5,marks:50.1,maxMarks:100,sourceExam:'',label:'Completed test',bySubject:{Geography:{total:25,correct:25,incorrect:0,skipped:0,marks:50,maxMarks:50},Economy:{total:25,correct:5,incorrect:15,skipped:5,marks:.1,maxMarks:50}}});
 function fixture({rows=new Map(),storage=new Map()}={}){
@@ -15,7 +15,7 @@ function fixture({rows=new Map(),storage=new Map()}={}){
   vm.runInContext(core,context);
   const run=code=>vm.runInContext(code,context);
   run(`render=()=>{};toast=()=>{};S.ready=true;S.auth='none';S.space='static';DASH.scope='static';S.packs=[{id:'test-paper',title:'Test',questions:Array.from({length:50},(_,i)=>({no:i+1,subject:i<25?'Geography':'Economy',topic:'General',text:'Question',answer:'A',options:{A:'Yes',B:'No'}}))}];rebuild();`);
-  const account=async(user='alice')=>{run(`S.user={id:${JSON.stringify(user)}};S.storage='cloud';S.store=supaBackend(sb,${JSON.stringify(user)});`);await run('loadTestHistory(S.store,S.storage)');};
+  const account=async(user='alice')=>{run(`S.user={id:${JSON.stringify(user)}};S.storage='cloud';S.store=supaBackend(sb,${JSON.stringify(user)});`);await run('loadTestHistory(S.store,S.storage)');run("quoteSync={state:'ready',owner:S.store.quoteOwner};");};
   return {run,account,rows,storage,calls,hooks,fail,context,flush:()=>run('TEST_HISTORY.chain')};
 }
 test('production starts with no invented history and account loads never seed records',async()=>{

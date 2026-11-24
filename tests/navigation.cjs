@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const source=fs.readFileSync(__dirname+'/../js/app.js','utf8');
+const source=fs.readFileSync(__dirname+'/../js/mapping-storage.js','utf8')+'\n'+fs.readFileSync(__dirname+'/../js/app.js','utf8');
 function fixture(hash='#/dashboard',search='?preview=1'){
   const elements=new Map(),events={},browserEvents={},storage=new Map(),entries=[],scrolls=[];let index=-1;
   const location={hostname:'127.0.0.1',pathname:'/study/',search,hash,href:'http://127.0.0.1/study/'+search+hash};
