@@ -154,3 +154,9 @@
 :root[data-session-active=true] .world-country,:root[data-session-active=true] .india-state{pointer-events:none}
 
 .map-save-status{font-size:.875rem;color:var(--muted);max-width:210px}@media(max-width:640px){.map-save-status{display:none}}
+
+#session-count{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit}
+.session-count-available{margin:5px 0 0;font-size:12px}
+.plate-motion-arrow{fill:none;stroke:#d2c0ff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke}
+.world-feature.trench .south-river{stroke:#64cddc;stroke-dasharray:4 3;opacity:.85}
+.world-feature.volcanic-belt .south-river{stroke:#f58d67;stroke-width:3;opacity:.85}

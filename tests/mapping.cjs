@@ -131,9 +131,9 @@ test('active practice uses a full-map overlay, hides labels, and reports green/r
  f.run('nextQuestion();');assert.equal(f.run('document.documentElement.dataset.sessionActive'),'false');assert.equal(f.node('session-overlay').hidden,true);
  f.run("startSession(['country-BRA']);answer(state.session.options.find(id=>id!=='country-BRA'));");assert.equal(f.run('document.documentElement.dataset.answerStatus'),'wrong');assert.match(f.node('session-feedback').innerHTML,/wrong.*Incorrect/);
 });
-test('recall shows Identify this place, reveals without scoring, and keeps grading explicit',()=>{
+test('recall names the feature type, reveals without scoring, and keeps grading explicit',()=>{
  const f=fixture();f.run("setScope('world');chooseWorldTopic('countries','recall');startSession(['country-BRA']);");
- assert.match(f.node('session-overlay').innerHTML,/Identify this place/);assert.match(f.node('session-overlay').innerHTML,/Reveal answer/);assert.ok(!f.node('session-overlay').innerHTML.includes('Brazil'));assert.ok(!f.node('quiz-marker').innerHTML.includes('Brazil'));
+ assert.match(f.node('session-overlay').innerHTML,/Which country is this\?/);assert.match(f.node('session-overlay').innerHTML,/Reveal answer/);assert.ok(!f.node('session-overlay').innerHTML.includes('Brazil'));assert.ok(!f.node('quiz-marker').innerHTML.includes('Brazil'));
  f.run('reveal();nextQuestion();');assert.equal(f.run('state.session.done'),false);assert.equal(f.run('state.session.results.length'),0);assert.match(f.node('session-overlay').innerHTML,/Brasília/);
  f.run('recordResult(true);nextQuestion();');assert.equal(f.run('state.session.done'),true);
 });
@@ -167,4 +167,32 @@ test('rapid map edits keep their order and unchanged form fields do not overwrit
 });
 test('backup snapshots and concurrent appended map changes are applied exactly once',()=>{
  const f=fixture();f.run("loadLocal();state.mode='practice';startSession(['ganga']);answer('ganga');MappingStorage.restore({history:{},edits:{},mapSettings:{},theme:'dark'});loadLocal();startSession(['ganga']);answer('ganga');loadLocal()");assert.equal(f.run('state.history.ganga.seen'),2);
+});
+
+test('question count works above ten and is capped by the filtered pool',()=>{
+ const f=fixture();
+ f.run("chooseTopic('rivers','practice');startSession()");
+ assert.equal(f.run('state.session.ids.length'),10);
+ f.node('session-count').value='17';
+ f.run("setMode('practice');startSession()");
+ assert.equal(f.run('state.session.ids.length'),17);
+ f.node('session-count').value='999';
+ f.run("setScope('world');chooseWorldTopic('subduction','recall');startSession()");
+ assert.equal(f.run('state.session.ids.length'),4);
+ assert.match(f.node('session-overlay').innerHTML,/Which (ocean trench|volcanic belt) is this\?/);
+});
+
+test('plate arrows and named subduction features render on the world map',()=>{
+ const f=fixture();
+ f.run("setScope('world');chooseWorldTopic('plates');selectWorldFeature('plate-eu')");
+ assert.match(f.node('world-features').innerHTML,/class="plate-motion-arrow"[^>]*rotate\(91\)/);
+ assert.match(f.node('selection-card').innerHTML,/Motion: E \(91°\)/);
+ f.run("chooseWorldTopic('subduction')");
+ for(const name of ['Pacific Ring of Fire','Mariana Trench','Java Trench','Aleutian Trench']){
+  assert.ok(f.node('world-features').innerHTML.includes(name));
+  assert.ok(f.run("globalSearch('world',"+JSON.stringify(name)+").length")>0);
+ }
+ for(const place of data.worldPlaces.filter(p=>p.group==='trench'||p.group==='volcanic-belt')){
+  for(const line of place.lines)for(let i=1;i<line.length;i++)assert.ok(Math.abs(line[i][0]-line[i-1][0])<180);
+ }
 });
