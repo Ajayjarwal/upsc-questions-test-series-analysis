@@ -587,14 +587,6 @@ body{padding:22px clamp(16px,4vw,54px) 80px;font-size:15px}
 .ui-hero h1{font-size:32px;font-weight:600;letter-spacing:-.7px;line-height:1.2}
 .ui-hero p{margin-top:8px;font-size:14px;color:var(--muted)}
 .ui-hero .btn{font-size:13px;padding:9px 15px;white-space:nowrap;border-radius:10px}
-.ui-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--card);border:1px solid var(--rule);border-radius:15px;overflow:hidden}
-.ui-stat{padding:18px 22px;min-width:0}
-.ui-stat+.ui-stat{border-left:1px solid var(--rule)}
-.ui-stat-label{font-size:12px;color:var(--muted)}
-.ui-stat-value{display:block;font-size:29px;font-weight:600;letter-spacing:-.6px;line-height:1.2;margin:6px 0}
-.ui-stat-value small{font-size:16px;color:var(--muted);font-weight:400;letter-spacing:0}
-.ui-stat-note{font-size:11px;color:var(--muted)}
-.ui-stat:last-child .ui-stat-value{color:var(--gold)}
 .ui-home .card{border-radius:15px;padding:21px;gap:13px}
 .ui-home .btn{border-radius:10px;font-size:13px;padding:9px 15px}
 .ui-home .btn.sm{font-size:12px;padding:7px 12px}
@@ -665,8 +657,8 @@ body{padding:22px clamp(16px,4vw,54px) 80px;font-size:15px}
 .ui-home .unattempted-wrap strong{font-size:13px;font-weight:500}
 .ui-home .unattempted-wrap .muted{font-size:11px!important}
 .ui-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px;padding:1px 2px 8px}
-@media(max-width:920px){.ui-space-row{grid-template-columns:1fr}.ui-space-row .quote-card{border-left:0;border-top:1px solid var(--rule);padding:10px 0 0}.ui-learning-grid{grid-template-columns:1fr 1fr}.ui-quiz-foot{align-items:flex-start;flex-direction:column;gap:10px}.ui-stat{padding:16px}}
-@media(max-width:640px){body{padding-inline:16px}.wrap{gap:20px}.ui-topbar{gap:10px}.ui-brand .logo{font-size:14px;letter-spacing:.1em}.ui-brand-caption{font-size:8px}.ui-brand-symbol{width:29px;height:29px}.ui-preview-pill{font-size:9px;padding:4px 7px}.ui-topbar .hdr-r{gap:7px}.ui-tabs{gap:0;justify-content:space-between}.ui-tabs .tab{font-size:11px;gap:5px;padding-bottom:12px}.ui-tabs .tab svg{display:none}.ui-home{gap:18px}.ui-hero{align-items:flex-start;flex-direction:column;gap:13px}.ui-hero h1{font-size:28px}.ui-hero p{font-size:13px}.ui-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.ui-stat{padding:14px 16px}.ui-stat:nth-child(3){border-left:0;border-top:1px solid var(--rule)}.ui-stat:nth-child(4){border-top:1px solid var(--rule)}.ui-stat-value{font-size:26px}.ui-quiz-grid,.ui-learning-grid{grid-template-columns:1fr}.ui-quiz-foot{flex-direction:row;align-items:center}.ui-home .daily-revision{padding:15px}.ui-notebook,.ui-tools,.ui-quiz-card{padding:18px}.ui-section-title span{font-size:10px}.ui-notebook-foot{flex-wrap:wrap}.ui-header{gap:15px}}
+@media(max-width:920px){.ui-space-row{grid-template-columns:1fr}.ui-space-row .quote-card{border-left:0;border-top:1px solid var(--rule);padding:10px 0 0}.ui-learning-grid{grid-template-columns:1fr 1fr}.ui-quiz-foot{align-items:flex-start;flex-direction:column;gap:10px}}
+@media(max-width:640px){body{padding-inline:16px}.wrap{gap:20px}.ui-topbar{gap:10px}.ui-brand .logo{font-size:14px;letter-spacing:.1em}.ui-brand-caption{font-size:8px}.ui-brand-symbol{width:29px;height:29px}.ui-preview-pill{font-size:9px;padding:4px 7px}.ui-topbar .hdr-r{gap:7px}.ui-tabs{gap:0;justify-content:space-between}.ui-tabs .tab{font-size:11px;gap:5px;padding-bottom:12px}.ui-tabs .tab svg{display:none}.ui-home{gap:18px}.ui-hero{align-items:flex-start;flex-direction:column;gap:13px}.ui-hero h1{font-size:28px}.ui-hero p{font-size:13px}.ui-quiz-grid,.ui-learning-grid{grid-template-columns:1fr}.ui-quiz-foot{flex-direction:row;align-items:center}.ui-home .daily-revision{padding:15px}.ui-notebook,.ui-tools,.ui-quiz-card{padding:18px}.ui-section-title span{font-size:10px}.ui-notebook-foot{flex-wrap:wrap}.ui-header{gap:15px}}
 
 
 /* Readable type, original logo treatment, and concealed practice navigation. */
@@ -683,9 +675,6 @@ body{font-size:16px;line-height:1.55}
 .ui-hero p,.ui-quiz-card p,.ui-notebook-head p{font-size:16px}
 .ui-overline{font-size:12px}
 .ui-context-label{font-size:12px}
-.ui-stat-label,.ui-stat-note{font-size:14px}
-.ui-stat-value{font-size:34px}
-.ui-stat-value small{font-size:20px}
 .ui-home .btn,.ui-hero .btn{font-size:15px;padding:10px 16px}
 .ui-home .btn.sm{font-size:14px;padding:7px 13px}
 .ui-home .daily-heading h2{font-size:20px}
@@ -751,8 +740,6 @@ body.ui-menu-open{overflow:hidden}
  .ui-tabs .tab{font-size:14px}
  .ui-hero h1{font-size:30px}
  .ui-hero p{font-size:16px}
- .ui-stat-label,.ui-stat-note{font-size:13px}
- .ui-stat-value{font-size:30px}
  .ui-quiz-foot{align-items:flex-start;flex-direction:column}
  .ui-section-title{align-items:flex-start;gap:10px}
  .ui-section-title span{font-size:13px}
@@ -792,11 +779,6 @@ body.ui-menu-open{overflow:hidden}
 .ui-home .ui-library>section>.row h2{font-size:22px;font-weight:600;line-height:1.3;letter-spacing:-.2px}
 .ui-home .ui-performance .card.flat{padding:16px;border-radius:12px}
 .ui-home .ui-performance>section.card{padding:var(--ui-card-padding)}
-.ui-stats{border-radius:var(--ui-card-radius)}
-.ui-stat{padding:18px 20px}
-.ui-stat-label{display:block;font-size:14px}
-.ui-stat-value{font-size:38px;font-weight:700;margin:5px 0}
-.ui-stat-note{display:block;font-size:14px;line-height:1.4}
 .ui-home .ui-quiz-primary .btn{background:transparent;border-color:var(--rule);color:var(--ink)}
 .ui-home .btn:not(.pri):hover:not(:disabled){background:var(--card2);border-color:var(--muted)}
 .ui-home .daily-revision{border-color:var(--gold-line)}
@@ -808,8 +790,6 @@ body.ui-menu-open{overflow:hidden}
  body{padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}
  html{scroll-padding-bottom:110px}
  .ui-home{--ui-card-padding:18px}
- .ui-stat{padding:16px}
- .ui-stat-value{font-size:34px}
  .ui-tabs{
   position:fixed;left:0;right:0;bottom:0;z-index:50;margin:0;
   display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;
