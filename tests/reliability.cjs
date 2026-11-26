@@ -123,3 +123,47 @@ test('complete backups retain held answers as recovery evidence and never apply 
 test('trimming a daily draft retains the original event slots to avoid collisions with earlier answers',async()=>{
  const f=fixture(),cloud=remote(f.run('mergeProgress'));await f.open(cloud.store('alice'));f.run("startQuiz(['paper:1','paper:2'],{mode:'practice'});const first=quizEventId('paper:1','answer');S.quiz.uids=['paper:2'];const second=quizEventId('paper:2','answer');globalThis.slotIds=[first,second]");assert.notEqual(f.run('slotIds[0]'),f.run('slotIds[1]'));
 });
+
+test('practice home lists only named unfinished drafts for its section and removes a submitted draft',async()=>{
+  const f=fixture(),cloud=remote(f.run('mergeProgress'));
+  cloud.bank('alice').packs.push({...paper(),id:'cse::paper'});
+  await f.open(cloud.store('alice'));
+  f.run(`startQuiz(['paper:1'],{mode:'exam',label:'Static Test 12'});
+    resetPracticeSpace('cse');startQuiz(['cse::paper:1'],{mode:'exam',label:'CSE 2021'});
+    resetPracticeSpace('static');loadQuizSessions();`);
+  assert.match(f.run('viewHome()'),/Static Test 12/);
+  assert.doesNotMatch(f.run('viewHome()'),/CSE 2021/);
+  for(const tab of ['notebook','marks','import']){
+    f.run(`S.tab='${tab}';pageNavigationRender()`);
+    assert.doesNotMatch(f.node('app').innerHTML,/Continue where you left off/);
+  }
+  assert.doesNotMatch(f.run('viewSwot()'),/Continue where you left off/);
+  f.run(`S.tab='practice';resumeQuiz(QUIZ_DRAFTS.rows.find(row=>row.quiz.space==='static').quiz.id);
+    finishQuiz();S.quiz=null;loadQuizSessions();`);
+  await f.run('flush()');
+  assert.doesNotMatch(f.run('viewHome()'),/Continue where you left off/);
+  f.run(`resetPracticeSpace('cse')`);
+  assert.match(f.run('viewHome()'),/CSE 2021/);
+});
+
+test('a submitted test kept for recovery never appears in Continue and saves from another section',async()=>{
+  const a=fixture(),cloud=remote(a.run('mergeProgress')),base=paper().questions[0];
+  cloud.bank('alice').packs=[{...paper(),questions:Array.from({length:50},(_,i)=>({...base,no:i+1}))}];
+  await a.open(cloud.store('alice'));
+  a.run(`startQuiz(S.qs.map(q=>q.uid),{mode:'exam',label:'Static Test 12'});
+    for(const uid of S.quiz.uids)S.quiz.res[uid]={ok:true};
+    S.quiz.done=true;S.quiz.completedAt=Date.now();saveQuizSession();`);
+  const b=fixture(a.storage),store=cloud.store('alice'),save=store.saveTestResult;
+  let release;
+  store.saveTestResult=async result=>{await new Promise(resolve=>{release=resolve;});await save(result);};
+  b.run(`S.space='cse'`);
+  await b.open(store);
+  assert.equal(b.run('QUIZ_DRAFTS.rows.length'),1);
+  assert.equal(b.run('resumeCard()'),'');
+  b.run(`resetPracticeSpace('static')`);
+  assert.equal(b.run('resumeCard()'),'');
+  release();await b.run('TEST_HISTORY.chain');
+  assert.equal(cloud.bank('alice').history.length,1);
+  assert.equal(cloud.bank('alice').history[0].bySubject.Geography.correct,50);
+  assert.equal(b.run('QUIZ_DRAFTS.rows.length'),0);
+});

@@ -600,12 +600,22 @@ function loadQuizSessions(){
   QUIZ_DRAFTS.rows.sort((a,b)=>b.updated-a.updated);
 }
 function resumeCard(){
-  if(S.quiz||!QUIZ_DRAFTS.rows.length)return '';
-  return `<section class="card resume-card"><h2>Continue where you left off</h2><p class="hint">Saved on this browser for this account. Exam answers stay unchecked until you submit.</p>${QUIZ_DRAFTS.rows.slice(0,3).map(row=>`<div class="row sp"><div><strong>${esc(row.quiz.label||row.quiz.kind||'Unfinished test')}</strong><p class="hint">${SPACES[row.quiz.space].label} · ${row.quiz.uids.length} questions${row.valid?'':' · Questions changed; this draft cannot be resumed safely'}</p></div><div class="row"><button class="btn pri sm" data-act="resume-quiz" data-v="${esc(row.quiz.id)}" ${row.valid?'':'disabled'}>${row.quiz.done?'Recover result':'Resume'}</button><button class="linkbtn" data-act="discard-quiz" data-v="${esc(row.quiz.id)}">Discard draft</button></div></div>`).join('')}</section>`;
+  const drafts=QUIZ_DRAFTS.rows.filter(({quiz})=>quiz.space===S.space&&!quiz.done).slice(0,3);
+  if(!drafts.length)return '';
+  return `<section class="card resume-card" aria-labelledby="resume-title">
+    <h2 id="resume-title">Continue where you left off</h2>
+    ${drafts.map(({quiz,valid})=>`<div class="resume-row">
+      <div class="resume-test"><strong>${esc(quiz.kind?.endsWith(' year PYQ')?`${spaceName()} PYQs · ${quiz.label}`:quiz.label||quiz.kind||'Unfinished test')}</strong>
+      <span class="hint">${quiz.uids.length} question${quiz.uids.length===1?'':'s'}${valid?'':' · Questions changed. This draft cannot be resumed.'}</span></div>
+      <div class="row"><button class="btn pri sm" data-act="resume-quiz" data-v="${esc(quiz.id)}" ${valid?'':'disabled'}>Resume</button><button class="linkbtn" data-act="discard-quiz" data-v="${esc(quiz.id)}">Discard draft</button></div>
+    </div>`).join('')}
+  </section>`;
 }
 function discardQuizDraft(id){try{localStorage.setItem(quizClaimKey(id),JSON.stringify({tab:QUIZ_TAB,closed:true}));localStorage.removeItem(quizStorageKey(quizOwner(),id));}catch(error){}QUIZ_DRAFTS.rows=QUIZ_DRAFTS.rows.filter(row=>row.quiz.id!==id);}
 function resumeQuiz(id){
-  loadQuizSessions();const row=QUIZ_DRAFTS.rows.find(row=>row.quiz.id===id);if(!row?.valid){toast('This draft no longer matches your questions.');return;}
+  loadQuizSessions();
+  const row=QUIZ_DRAFTS.rows.find(({quiz})=>quiz.id===id&&quiz.space===S.space&&!quiz.done);
+  if(!row?.valid){toast('This draft can no longer be resumed.');render();return;}
   resetPracticeSpace(row.quiz.space);
   const quiz=structuredClone(row.quiz);quiz.slots=quiz.slots||Object.fromEntries(quiz.uids.map((uid,i)=>[uid,i]));
   if(quiz.kind==='Daily revision'&&!quiz.done){
@@ -614,7 +624,7 @@ function resumeQuiz(id){
     quiz.uids=[...completed,...waiting];quiz.i=completed.length;
   }
   claimQuiz(id);DASH.open=false;S.quiz=quiz;S.quiz.t0=Date.now();S.quiz.resumeClock=Date.now();S.quiz.elapsedBase=S.quiz.elapsedActive||0;S.quiz.i=Math.max(0,Math.min(S.quiz.uids.length-1,S.quiz.i||0));S.tab='practice';
-  if(S.quiz.done){if(!S.quiz.progressSaved)saveCompletedTest(S.quiz);S.quiz.draftFinalized=true;discardQuizDraft(id);}else if(S.quiz.submitting)finishQuiz();
+  if(S.quiz.submitting)finishQuiz();
   render();window.scrollTo(0,0);
 }
 function stableJson(value){return JSON.stringify(value,(_,v)=>plainObject(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
@@ -750,7 +760,12 @@ function flush(){
 }
 function flushInBackground(){flush().catch(()=>{});}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushInBackground();});
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveQuizSession();else if(S.ready&&!S.quiz){loadQuizSessions();updateSyncStatus();}});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveQuizSession();else if(S.ready&&!S.quiz){loadQuizSessions();if(!DASH.open&&S.tab==="practice"&&S.view==="home")render();else updateSyncStatus();}});
+window.addEventListener?.('storage',event=>{
+  if(!event.key?.startsWith(QUIZ_PREFIX+encodeURIComponent(quizOwner())+':')||event.key.endsWith(':claim'))return;
+  QUIZ_DRAFTS.dirty=true;
+  if(S.ready&&!S.quiz&&!DASH.open&&S.tab==='practice'&&S.view==='home')render();
+});
 window.addEventListener?.('pagehide',saveQuizSession);
 window.addEventListener?.('online',()=>{if(S.bankRetry)openBank(S.bankRetry.store,S.bankRetry.mode);else if(S.store)flushInBackground();});
 window.addEventListener?.('offline',()=>{saveQuizSession();updateSyncStatus();});
@@ -1412,6 +1427,7 @@ function viewHome(){
   const ready=smartPool("",{months:new Set()}).length,subjects=new Set(S.qs.map(q=>q.subject)).size;
   const accuracy=stats.att?Math.round(stats.ok/stats.att*100):null;
   return `<div class="ui-home"><section class="ui-hero"><div><div class="ui-overline">${esc(spaceName())} / Overview ${LOCAL_PREVIEW?'<span class="ui-context-label">Local preview</span>':""}</div><h1>${isExamSpace()?spaceName()+" PYQ Practice":"Your practice dashboard"}</h1><p>Keep revision moving. Build a quiz, revisit mistakes, and see what sticks.</p></div>${isSearchSpace()?`<button class="btn search-launch" data-feature-act="search-open">${SEARCH_ICON}Search questions</button>`:`<button class="btn" data-act="tab" data-v="import">+ Import questions</button>`}</section>
+  ${resumeCard()}
   <section class="ui-stats" aria-label="Your practice at a glance"><div class="ui-stat"><span class="ui-stat-label">Questions</span><strong class="ui-stat-value">${S.qs.length}</strong><span class="ui-stat-note">${subjects} subject${subjects===1?"":"s"}</span></div><div class="ui-stat"><span class="ui-stat-label">Accuracy</span><strong class="ui-stat-value">${accuracy===null?"—":accuracy+"%"}</strong><span class="ui-stat-note">Latest answers · ${stats.att}</span></div><div class="ui-stat"><span class="ui-stat-label">To revisit</span><strong class="ui-stat-value">${mis}</strong><span class="ui-stat-note">Mistakes notebook</span></div><div class="ui-stat"><span class="ui-stat-label">Today</span><strong class="ui-stat-value">${plan.done}<small> / ${plan.target}</small></strong><span class="ui-stat-note">${plan.items.length?`${plan.items.length} due`:"You're up to date"}</span></div></section>
   ${has?dailyCard():emptyBank()}
   <section aria-labelledby="ui-session-title"><div class="ui-section-title"><h2 id="ui-session-title">Choose your next session</h2><span>Your pace. Your progress.</span></div><div class="ui-quiz-grid"><article class="ui-quiz-card ui-quiz-primary"><div class="ui-quiz-head"><span class="icon">${ic("quiz")}</span><h3>Take a quiz</h3></div><p>Choose your subjects and subtopics. Build a focused session around what you want to learn.</p><div class="ui-quiz-foot"><span class="hint">${S.qs.length} questions to explore</span><button class="btn" data-act="startwiz" ${has?"":"disabled"}>Start quiz ${UI_ARROW}</button></div></article><article class="ui-quiz-card${ready?"":" locked"}"><div class="ui-quiz-head"><span class="icon">${ic("smart")}</span><h3>Smart Quiz</h3></div><p>Turn mistakes into progress with a mix of questions that need another look, highest priority first.</p><div class="ui-quiz-foot"><span class="hint">${ready?`${ready} mistakes ready to revisit`:mis?"All mistakes practised today":"Unlocks after your first mistake"}</span><button class="btn" data-act="smart" ${ready?"":"disabled"}>Revisit mistakes ${UI_ARROW}</button></div></article></div></section>
@@ -1903,7 +1919,7 @@ function render(){
   else body=viewImport();
   const keepScroll=window.scrollY;
   const focus=S.ready&&S.tab==="practice"&&((S.quiz&&!S.quiz.done)||(!S.quiz&&S.view==="tr"));
-  app.innerHTML=(focus?`<div class="row" style="justify-content:flex-end">${syncBadge()}${themeBtn()}</div>`:header())+progressRecoveryCard()+resumeCard()+body;
+  app.innerHTML=(focus?`<div class="row" style="justify-content:flex-end">${syncBadge()}${themeBtn()}</div>`:header())+progressRecoveryCard()+body;
   window.scrollTo(0,keepScroll);
   if(S.tab==="import"){bindImport();}
 }
@@ -2272,7 +2288,11 @@ document.addEventListener("click",async e=>{
     }
     case "pc":tgt().count=v==="custom"?"custom":Number(v);render();break;
     case "pm":tgt().mode=v;render();break;
-    case "start":startQuiz(pickSet(),{mode:sel.mode,kind:"Quiz",label:[...sel.subjects].join(", ")||"Mixed"});break;
+    case "start":{
+      const paper=spacePacks().find(pack=>pack.id===sel.pack);
+      startQuiz(pickSet(),{mode:sel.mode,kind:"Quiz",label:paper?.title||[...sel.subjects].join(", ")||"Mixed"});
+      break;
+    }
     case "dailyopen":S.view="daily";S.quiz=null;render();window.scrollTo(0,0);break;
     case "dailyback":S.view="home";render();window.scrollTo(0,0);break;
     case "dailygo":startDailyReview();break;
@@ -2630,7 +2650,7 @@ async function loadTestHistory(store,mode){
   h.owner=owner;h.store=store;h.loaded=false;h.remote=!!store?.loadTestResults&&!!store?.saveTestResult;h.chain=Promise.resolve();h.error="";
   let cached={};try{cached=JSON.parse(localStorage.getItem(TEST_HISTORY_KEY+":"+owner)||"{}");}catch(error){}
   h.rows=normalizeTestHistory([...previous.rows,...normalizeTestHistory(cached.rows)]);h.pending=new Set([...previous.pending,...(Array.isArray(cached.pending)?cached.pending:[])].filter(id=>h.rows.some(row=>row.id===id)));
-  if(!h.remote){h.loaded=true;h.state="ready";if(h.rows.length&&!cacheTestHistory()){h.state="error";h.error="This browser could not save the test results. Download a backup before leaving this page.";}return;}
+  if(!h.remote){h.loaded=true;h.state="ready";if(h.rows.length&&!cacheTestHistory()){h.state="error";h.error="This browser could not save the test results. Download a backup before leaving this page.";}recoverCompletedDrafts();return;}
   h.state="loading";historyRender();
   try{
     const saved=normalizeTestHistory(await store.loadTestResults());
@@ -2639,6 +2659,7 @@ async function loadTestHistory(store,mode){
     h.loaded=true;h.rows=normalizeTestHistory([...saved,...h.rows]);for(const row of saved)h.pending.delete(row.id);
     h.state="ready";h.error="";cacheTestHistory();
     for(const id of [...h.pending]){const row=h.rows.find(item=>item.id===id);if(row)queueTestSave(row);}
+    recoverCompletedDrafts();
   }catch(error){
     if(h.owner===owner&&h.generation===generation&&h.store===store){h.state="error";h.error="Completed-test history could not sync. Your question bank is still available.";}
   }
@@ -2714,15 +2735,35 @@ function completedStaticPaperId(uids){
   return matches.length===1?matches[0].id:"";
 }
 function saveCompletedTest(Q){
-  if(S.space!=="static"||!Q?.done||Q.progressSaved||![50,100].includes(Q.uids.length)||Q.kind==="Daily revision")return false;
+  if(!Q?.done||(Q.space||S.space)!=="static"||Q.progressSaved||![50,100].includes(Q.uids.length)||Q.kind==="Daily revision")return false;
   const results=Q.uids.map(uid=>Q.res[uid]);
   if(results.some(r=>!r||r.deferred))return false;
   const correct=results.filter(r=>r.ok&&!r.skipped).length,skipped=results.filter(r=>r.skipped).length,incorrect=results.length-correct-skipped;
-  const qs=Q.uids.map(uid=>S.byUid.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Q.completedAt||Date.now();
-  const sessionId=`${S.space}:${Q.id||Q.start}`,legacy=readTestHistory().find(row=>row.id.startsWith(sessionId+':'));
-  const record={id:legacy?.id||sessionId,date,total:Q.uids.length,space:S.space,correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
+  const questions=S.space==="static"?S.byUid:new Map(dashQuestions("static").map(q=>[q.uid,q]));
+  const qs=Q.uids.map(uid=>questions.get(uid)),exams=new Set(qs.map(q=>q?questionSourceExam(q):"")),date=Q.completedAt||Date.now();
+  const sessionId=`static:${Q.id||Q.start}`,legacy=readTestHistory().find(row=>row.id.startsWith(sessionId+':'));
+  const record={id:legacy?.id||sessionId,date,total:Q.uids.length,space:"static",correct,incorrect,skipped,marks:testMarks(correct,incorrect),maxMarks:Q.uids.length*2,bySubject:testSubjects(qs,results),mode:Q.mode,sourceExam:exams.size===1?[...exams][0]:"mixed",label:Q.label||Q.kind||"Completed test"};
   const paperId=completedStaticPaperId(Q.uids);if(paperId)record.paperId=paperId;
   const added=recordTestResult(record);Q.progressSaved=true;return added;
+}
+function recoverCompletedDrafts(){
+  if(!S.ready||!quizOwner())return;
+  loadQuizSessions();
+  const generation=TEST_HISTORY.generation;
+  for(const {quiz,valid} of QUIZ_DRAFTS.rows){
+    if(!valid||!quiz.done||quiz.space!=="static"||![50,100].includes(quiz.uids.length))continue;
+    saveCompletedTest({...quiz,progressSaved:false});
+    const id=`static:${quiz.id||quiz.start}`;
+    const result=readTestHistory().find(row=>row.id===id||row.id.startsWith(id+':'));
+    if(!result)continue;
+    TEST_HISTORY.chain.then(()=>{
+      if(TEST_HISTORY.generation!==generation)return;
+      const saved=TEST_HISTORY.remote?!TEST_HISTORY.pending.has(result.id):cacheTestHistory();
+      if(!saved)return;
+      if(S.quiz?.id===quiz.id)S.quiz.draftFinalized=true;
+      discardQuizDraft(quiz.id);
+    });
+  }
 }
 const finishQuizBeforeProgress=finishQuiz;
 finishQuiz=function(){const Q=S.quiz,wasDone=Q?.done;finishQuizBeforeProgress();if(!wasDone&&Q?.done){saveCompletedTest(Q);const eligible=S.space==="static"&&[50,100].includes(Q.uids.length)&&Q.kind!=="Daily revision";if(!eligible||(TEST_HISTORY.state!=="error"&&(!TEST_HISTORY.pending.size||cacheTestHistory()))){Q.draftFinalized=true;discardQuizDraft(Q.id);}else saveQuizSession();}};
@@ -2789,7 +2830,7 @@ render=function(){
   }
   document.documentElement.setAttribute("data-dashboard","true");
   document.documentElement.setAttribute("data-space",DASH.scope);document.documentElement.setAttribute("data-theme",S.theme);
-  const keep=window.scrollY;app.innerHTML=header().replace(/<nav class="tabs ui-tabs"[\s\S]*?<\/nav>/,'<div class="swot-header-caption"><span>Dashboard / Learning analysis</span><span>Your learning dashboard</span></div>')+progressRecoveryCard()+resumeCard()+viewSwot();window.scrollTo(0,keep);
+  const keep=window.scrollY;app.innerHTML=header().replace(/<nav class="tabs ui-tabs"[\s\S]*?<\/nav>/,'<div class="swot-header-caption"><span>Dashboard / Learning analysis</span><span>Your learning dashboard</span></div>')+progressRecoveryCard()+viewSwot();window.scrollTo(0,keep);
 };
 document.addEventListener("submit",event=>{if(event.target.id!=="swot-search-form")return;event.preventDefault();DASH.query=document.getElementById("swot-topic-search").value;DASH.detail=null;render();document.getElementById("swot-heatmap")?.scrollIntoView({block:"start"});});
 document.addEventListener("toggle",event=>{const key=event.target.dataset?.dashGroup;if(key)DASH.heatOpen[key]=event.target.open;if(event.target.classList?.contains("swot-more-insights"))DASH.insightsOpen=event.target.open;},true);
