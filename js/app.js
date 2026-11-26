@@ -953,9 +953,39 @@ function fmtSol(text){
 }
 function solution(q){
   const keyNote=answerKeyNote(q);
-  if(!q.exp&&!q.sum&&!(q.simg||[]).length)return keyNote;
+  const canAttach=S.space==="ca"&&!DASH.open&&q.packId&&packSpace(q.packId)==="ca";
+  if(!q.exp&&!q.sum&&!(q.simg||[]).length&&!canAttach)return keyNote;
   const links=q.src.map(u=>/^https?:\/\/\S+/.test(u)?`<a href="${esc(u.split(/\s+/)[0])}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`:`<span class="muted">${esc(u)}</span>`).join("");
-  return `${keyNote}<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}${figs(q.simg)}${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}</div>`;
+  const attachment=canAttach?`<div class="row"><button type="button" class="btn sm" data-act="solution-image">Add image to solution</button><input type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" data-solution-image="${esc(q.uid)}"></div>`:"";
+  return `${keyNote}<div class="sol"><span class="label">Solution</span>${fmtSol(q.exp)}<div data-solution-figures${q.simg?.length?"":" hidden"}>${figs(q.simg)}</div>${q.sum?`<div class="quick"><b>Quick note:</b> ${esc(q.sum)}</div>`:""}${q.src.length?`<details class="src"><summary>Sources</summary><div>${links}</div></details>`:""}${attachment}</div>`;
+}
+async function attachSolutionImage(uid,file){
+  const context=bankContext(),question=S.byUid.get(uid);
+  if(!context.store||S.space!=="ca"||DASH.open||!question||packSpace(question.packId)!=="ca")return;
+  if(!/^image\/(png|jpeg|webp|gif)$/.test(file.type))throw Error("Choose a PNG, JPEG, WebP or GIF image.");
+  if(!file.size||file.size>512*1024)throw Error("Choose an image up to 512 KB.");
+  const src=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result));
+    reader.onerror=()=>reject(Error("Could not read this image."));
+    reader.readAsDataURL(file);
+  });
+  assertBank(context);
+  if(!imgSafe(src))throw Error("Could not read this image.");
+  return enqueue(async()=>{
+    const pack=S.packs.find(item=>item.id===question.packId);
+    const current=pack?.questions.find(item=>item.no===question.no);
+    if(!current||!sameQuestion(current,question))throw Error("The question changed. Open the updated solution and try again.");
+    const images=normImgs(current.simg);
+    if(images.some(image=>image.src===src))return images;
+    images.push({src,cap:""});
+    const updated={...pack,questions:pack.questions.map(item=>item===current?{...item,simg:images}:item)};
+    await context.store.savePack(updated,pack.chunks||1);
+    assertBank(context);
+    S.packs=S.packs.map(item=>item===pack?updated:item);
+    rebuild();
+    return images;
+  });
 }
 const bmBtn=uid=>{const on=!!(S.prog[uid]&&S.prog[uid].b);return `<button class="bm" data-act="bm" data-v="${esc(uid)}" aria-pressed="${on}">${ic("mark")}${on?"Bookmarked":"Bookmark"}</button>`;};
 
@@ -2250,6 +2280,7 @@ document.addEventListener("click",async e=>{
   const a=el.dataset.act,v=el.dataset.v,sel=S.view==="smart"?S.smart:S.sel;
   try{
   switch(a){
+    case "solution-image":el.nextElementSibling.click();break;
     case "progress-review":DASH.open=false;S.tab='import';render();document.querySelector('.progress-recovery')?.setAttribute('open','');break;
     case "progress-export":saveFile('solo-answer-recovery.json',JSON.stringify({schema:'solo-answer-recovery/1',exported:new Date().toISOString(),changes:[...PROGRESS.conflicts.values()]},null,2));break;
     case "progress-discard":{const op=PROGRESS.conflicts.get(v);if(op){if(!window.confirm('Remove this saved change from this browser? Export the recovery file first if you want to keep it.'))break;localStorage.removeItem(progressOperationKey(op.owner,op.id));PROGRESS.conflicts.delete(v);render();}break;}
@@ -2381,7 +2412,27 @@ document.addEventListener("click",async e=>{
   }catch(err){toast("Action could not finish: "+((err&&err.message)||"unknown error")+". Please try again.");}
 });
 document.addEventListener("input",e=>{if(!e.target)return;if(e.target.id==="reasoning"){const Q=S.quiz;if(Q&&!Q.done&&(Q.mode==="exam"||!Q.res[Q.uids[Q.i]]||Q.res[Q.uids[Q.i]].skipped))Q.rn[Q.uids[Q.i]]=e.target.value.slice(0,2000);return;}if(e.target.id==="impname")S.imp.name=e.target.value;else if(e.target.id==="impmonth")S.imp.month=e.target.value;else if(e.target.id==="impyear")S.imp.year=e.target.value;});
-document.addEventListener("change",e=>{
+document.addEventListener("change",async e=>{
+  const uid=e.target?.dataset?.solutionImage;
+  if(uid){
+    const file=e.target.files?.[0];
+    if(!file)return;
+    const button=e.target.previousElementSibling;
+    button.disabled=true;
+    try{
+      const images=await attachSolutionImage(uid,file);
+      if(!images)return;
+      for(const picker of document.querySelectorAll("[data-solution-image]")){
+        if(picker.dataset.solutionImage!==uid)continue;
+        const figures=picker.closest(".sol").querySelector("[data-solution-figures]");
+        figures.innerHTML=figs(images);
+        figures.hidden=false;
+      }
+      toast("Solution image saved.");
+    }catch(error){toast(error.message);}
+    finally{e.target.value="";button.disabled=false;}
+    return;
+  }
   const d=e.target&&e.target.dataset&&e.target.dataset.change;
   if(d==="pack"){S.sel.pack=e.target.value;render();}
   else if(d==="custom"){tgt().custom=Math.max(1,Math.min(200,parseInt(e.target.value,10)||1));render();}

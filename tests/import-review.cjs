@@ -347,3 +347,39 @@ test('the downloadable CSAT example parses and the import screen reports its rec
   run("S.space='csat'");
   assert.equal(run(`(()=>{const r=parseImport(${JSON.stringify(text)});S.imp.parsed=r;const html=importPreview();return !r.errors.length&&r.questions[0].source_exam==='CAPF'&&r.questions[1].source_exam==='CSE'&&html.includes('CSE: 1')&&html.includes('CAPF: 1')&&JSON.stringify(JSON.parse(importTemplate()))===JSON.stringify(JSON.parse(${JSON.stringify(text)}))})()`),true);
 });
+
+test('Current Affairs exposes image upload only after checking and saves it only in the solution', async () => {
+  const run=app();
+  await run(`(async()=>{
+    globalThis.FileReader=class {
+      readAsDataURL(file){this.result=file.data;this.onload();}
+    };
+    const image={type:'image/png',size:24,data:'data:image/png;base64,YWJj'};
+    const id='ca::old',uid=id+':1';
+    S.space='ca';
+    S.packs=[{...original,id,questions:[{...question,qimg:[{src:'images/question.png',cap:''}]}]}];
+    rebuild();
+    startQuiz([uid],{mode:'practice'});
+    globalThis.beforeImage=viewQuiz();
+    doPick('A');doCheck();
+    globalThis.afterCheck=viewQuiz();
+    const before=JSON.stringify(S.prog);
+    await attachSolutionImage(uid,image);
+    await attachSolutionImage(uid,image);
+    globalThis.progressUnchanged=before===JSON.stringify(S.prog);
+    globalThis.updatedSolution=solution(S.byUid.get(uid));
+    globalThis.restored=parseBackup(buildBackup()).packs[0].questions[0];
+    S.space='static';
+    globalThis.outsideSolution=solution(S.byUid.get(uid));
+    await attachSolutionImage(uid,{...image,data:'data:image/png;base64,ZGVm'});
+    globalThis.savedImages=disk.get(id).questions[0].simg;
+  })()`);
+  assert.doesNotMatch(run('beforeImage'),/Add image to solution/);
+  assert.match(run('afterCheck'),/Add image to solution/);
+  assert.match(run('updatedSolution'),/data:image\/png;base64,YWJj/);
+  assert.doesNotMatch(run('outsideSolution'),/Add image to solution/);
+  assert.equal(run('progressUnchanged'),true);
+  assert.equal(run('savedImages.length'),1);
+  assert.equal(run('restored.simg[0].src'),'data:image/png;base64,YWJj');
+  assert.equal(run('restored.qimg[0].src'),'images/question.png');
+});
